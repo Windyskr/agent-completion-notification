@@ -1,6 +1,12 @@
 package install
 
-import "testing"
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+)
 
 func TestValidateTargets(t *testing.T) {
 	for _, ok := range [][]string{nil, {}, {"claude"}, {"codex"}, {"claude", "codex"}} {
@@ -130,5 +136,32 @@ func TestExtractExe(t *testing.T) {
 		if got := extractExe(c.cmd, c.source); got != c.want {
 			t.Errorf("extractExe(%q, %q) = %q, 期望 %q", c.cmd, c.source, got, c.want)
 		}
+	}
+}
+
+// Executable 不能解析软链：Homebrew 的 /opt/homebrew/bin/acn 指向带版本号的
+// Cellar 路径，解析后写进配置，下次 brew upgrade 就会让 hook 指向不存在的文件。
+func TestExecutableKeepsSymlinkPath(t *testing.T) {
+	dir := t.TempDir()
+
+	// 编译出真二进制，再经软链启动，看它记录的是哪个路径。
+	bin := filepath.Join(dir, "acn-built")
+	if out, err := exec.Command("go", "build", "-o", bin, "../../cmd/acn").CombinedOutput(); err != nil {
+		t.Skipf("构建失败，跳过：%s", out)
+	}
+	viaLink := filepath.Join(dir, "acn-link")
+	if err := os.Symlink(bin, viaLink); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := exec.Command(viaLink, "doctor").CombinedOutput()
+	if err != nil && len(out) == 0 {
+		t.Fatalf("执行失败: %v", err)
+	}
+	if !strings.Contains(string(out), viaLink) {
+		t.Errorf("应记录软链路径 %s，实际输出：\n%s", viaLink, out)
+	}
+	if strings.Contains(string(out), bin) {
+		t.Errorf("软链被解析成了真实路径 %s，brew upgrade 后会失效", bin)
 	}
 }

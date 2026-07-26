@@ -21,7 +21,8 @@ hook 是个短命进程：解析载荷、发一次 HTTP、退出。全程约 120
 ## 安装
 
 ```bash
-go install github.com/windyskr/agent-completion-notification/cmd/acn@latest
+brew install windyskr/tap/acn
+# 或：go install github.com/windyskr/agent-completion-notification/cmd/acn@latest
 
 acn config webhook https://open.feishu.cn/open-apis/bot/v2/hook/xxxx
 acn install
@@ -119,6 +120,9 @@ acn config codex <on|off>       是否推送 Codex
 make test     # go vet + go test -race
 make build    # 产出 ./bin/acn
 ```
+
+Homebrew Formula 只存在于 tap 仓库 [windyskr/homebrew-tap](https://github.com/Windyskr/homebrew-tap)，
+主仓库不留副本——两份会各自漂移。
 
 一条硬约束：hook 进程**绝不能往 stdout 写任何东西**。
 Codex 的 Stop hook 若在 stdout 收到 `{"decision":"block"}` 会自动续跑一轮。

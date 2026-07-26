@@ -121,17 +121,18 @@ func Query() Status {
 	}
 }
 
-// Executable 返回用于写入配置的 acn 绝对路径，并解析符号链接
-// （Homebrew 的 bin 目录是软链，写入真实路径更稳）。
+// Executable 返回用于写入配置的 acn 绝对路径。
+//
+// 刻意不解析符号链接：Homebrew 里 /opt/homebrew/bin/acn 是软链，指向
+// /opt/homebrew/Cellar/acn/<版本>/bin/acn。解析之后写进配置的就是带版本号的
+// 路径，下一次 brew upgrade 换了版本目录，hook 就指向一个不存在的文件并静默失效。
+// 软链本身才是跨版本稳定的那个。
 func Executable() (string, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return "", err
 	}
-	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
-		exe = resolved
-	}
-	return exe, nil
+	return filepath.Abs(exe)
 }
 
 // backup 在改写前留一份副本，文件不存在时视为无需备份。
