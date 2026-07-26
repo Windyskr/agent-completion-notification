@@ -6,10 +6,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/windyskr/acn/internal/config"
-	"github.com/windyskr/acn/internal/event"
-	"github.com/windyskr/acn/internal/install"
-	"github.com/windyskr/acn/internal/notify"
+	"github.com/windyskr/agent-completion-notification/internal/config"
+	"github.com/windyskr/agent-completion-notification/internal/event"
+	"github.com/windyskr/agent-completion-notification/internal/install"
+	"github.com/windyskr/agent-completion-notification/internal/notify"
 )
 
 // check 是一条检查结果。

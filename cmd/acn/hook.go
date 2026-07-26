@@ -5,10 +5,10 @@ import (
 	"io"
 	"time"
 
-	"github.com/windyskr/acn/internal/claude"
-	"github.com/windyskr/acn/internal/codex"
-	"github.com/windyskr/acn/internal/event"
-	"github.com/windyskr/acn/internal/hook"
+	"github.com/windyskr/agent-completion-notification/internal/claude"
+	"github.com/windyskr/agent-completion-notification/internal/codex"
+	"github.com/windyskr/agent-completion-notification/internal/event"
+	"github.com/windyskr/agent-completion-notification/internal/hook"
 )
 
 // buildHookEvent 解析 Stop 载荷并按来源归一化。

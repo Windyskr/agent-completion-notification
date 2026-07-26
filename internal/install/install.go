@@ -13,7 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/windyskr/acn/internal/config"
+	"github.com/windyskr/agent-completion-notification/internal/config"
 )
 
 // TargetStatus 描述单个集成点的安装状态。

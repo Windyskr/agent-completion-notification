@@ -1,3 +1,3 @@
-module github.com/windyskr/acn
+module github.com/windyskr/agent-completion-notification
 
 go 1.23

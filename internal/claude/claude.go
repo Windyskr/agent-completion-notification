@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/windyskr/acn/internal/event"
-	"github.com/windyskr/acn/internal/hook"
+	"github.com/windyskr/agent-completion-notification/internal/event"
+	"github.com/windyskr/agent-completion-notification/internal/hook"
 )
 
 // transcriptRow 是 transcript JSONL 的一行，只声明用得到的字段。

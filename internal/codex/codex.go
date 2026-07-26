@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/windyskr/acn/internal/event"
-	"github.com/windyskr/acn/internal/hook"
+	"github.com/windyskr/agent-completion-notification/internal/event"
+	"github.com/windyskr/agent-completion-notification/internal/hook"
 )
 
 // eventTaskStarted 是 Codex 标记「本轮开始」的事件，与 task_complete 成对出现。

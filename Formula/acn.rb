@@ -2,11 +2,11 @@
 #   brew install --build-from-source ./Formula/acn.rb
 class Acn < Formula
   desc "Agent Completion Notification - AI CLI 任务完成通知（Claude Code / Codex → 飞书）"
-  homepage "https://github.com/windyskr/acn"
-  url "https://github.com/windyskr/acn/archive/refs/tags/v0.1.0.tar.gz"
+  homepage "https://github.com/windyskr/agent-completion-notification"
+  url "https://github.com/windyskr/agent-completion-notification/archive/refs/tags/v0.1.0.tar.gz"
   sha256 "0000000000000000000000000000000000000000000000000000000000000000"
   license "MIT"
-  head "https://github.com/windyskr/acn.git", branch: "main"
+  head "https://github.com/windyskr/agent-completion-notification.git", branch: "main"
 
   depends_on "go" => :build
 

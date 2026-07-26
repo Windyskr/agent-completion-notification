@@ -21,7 +21,7 @@ hook 是个短命进程：解析载荷、发一次 HTTP、退出。全程约 120
 ## 安装
 
 ```bash
-brew install windyskr/tap/acn      # 或：go install github.com/windyskr/acn/cmd/acn@latest
+go install github.com/windyskr/agent-completion-notification/cmd/acn@latest
 
 acn config webhook https://open.feishu.cn/open-apis/bot/v2/hook/xxxx
 acn install
@@ -75,7 +75,7 @@ acn config <k> <v>             修改配置
 ✓ Codex          hook 已安装 → /opt/homebrew/bin/acn
 ? Codex 信任     无法自动确认（Codex 未公开该状态）
     → 若 Codex 侧收不到通知，在 Codex 里执行 /hooks 信任 acn
-✓ 飞书 webhook   https://open.feishu.cn/…/5c5b…92b9
+✓ 飞书 webhook   https://open.feishu.cn/…/xxxx…xxxx
 ✓ 实际推送       已发出，请确认飞书是否收到
 ```
 

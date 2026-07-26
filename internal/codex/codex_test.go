@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/windyskr/acn/internal/hook"
+	"github.com/windyskr/agent-completion-notification/internal/hook"
 )
 
 // writeRollout 写一份 Codex rollout JSONL。

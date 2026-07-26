@@ -10,9 +10,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/windyskr/acn/internal/config"
-	"github.com/windyskr/acn/internal/event"
-	"github.com/windyskr/acn/internal/feishu"
+	"github.com/windyskr/agent-completion-notification/internal/config"
+	"github.com/windyskr/agent-completion-notification/internal/event"
+	"github.com/windyskr/agent-completion-notification/internal/feishu"
 )
 
 // SendTimeout 是单次投递的整体超时。

@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/windyskr/acn/internal/config"
-	"github.com/windyskr/acn/internal/event"
+	"github.com/windyskr/agent-completion-notification/internal/config"
+	"github.com/windyskr/agent-completion-notification/internal/event"
 )
 
 // serveCapture 起一个假飞书，记录收到的请求体并返回指定应答。

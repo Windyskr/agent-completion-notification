@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/windyskr/acn/internal/hook"
+	"github.com/windyskr/agent-completion-notification/internal/hook"
 )
 
 // writeTranscript 把若干 JSONL 行写入临时 transcript。

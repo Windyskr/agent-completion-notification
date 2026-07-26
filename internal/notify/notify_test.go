@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/windyskr/acn/internal/config"
-	"github.com/windyskr/acn/internal/event"
+	"github.com/windyskr/agent-completion-notification/internal/config"
+	"github.com/windyskr/agent-completion-notification/internal/event"
 )
 
 func TestGateBlocksDisabledSource(t *testing.T) {

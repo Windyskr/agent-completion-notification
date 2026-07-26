@@ -16,10 +16,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/windyskr/acn/internal/config"
-	"github.com/windyskr/acn/internal/event"
-	"github.com/windyskr/acn/internal/install"
-	"github.com/windyskr/acn/internal/notify"
+	"github.com/windyskr/agent-completion-notification/internal/config"
+	"github.com/windyskr/agent-completion-notification/internal/event"
+	"github.com/windyskr/agent-completion-notification/internal/install"
+	"github.com/windyskr/agent-completion-notification/internal/notify"
 )
 
 // version 由构建时通过 -ldflags "-X main.version=..." 注入。
