@@ -1,100 +1,73 @@
-// Package codex 把 Codex CLI 的 notify 回调翻译成通用 Event。
+// Package codex 把 Codex CLI 的 Stop hook 载荷翻译成通用 Event。
 //
-// Codex 在 ~/.codex/config.toml 里通过 notify 指定一个外部程序，一轮结束时执行：
+// Codex 在 config.toml 里以 [[hooks.Stop]] 注册命令，一轮结束时执行并通过 stdin
+// 传入 JSON。这是 Codex 的现行 hooks 引擎；顶层 notify 是它的遗留路径
+// （二进制里那个文件就叫 legacy_notify.rs），且全局只有一个槽位，会与用户已有的
+// 集成（如 Codex Computer Use）相互覆盖，故不采用。
 //
-//	notify_program [固定参数...] '<JSON 载荷>'
-//
-// JSON 恒为最后一个参数，形如：
-//
-//	{"type":"agent-turn-complete","turn-id":"...","thread-id":"...","cwd":"...",
-//	 "input-messages":["..."],"last-assistant-message":"..."}
-//
-// 载荷不含本轮起始时间，故 Codex 事件的耗时始终未知（DurationMS 为 0）。
+// 载荷直接给出 last_assistant_message，回复正文无需扫 transcript；耗时则由
+// rollout 里最后一条 task_started 算出。
 package codex
 
 import (
-	"context"
 	"encoding/json"
-	"fmt"
-	"os"
-	"os/exec"
 	"strings"
 	"time"
 
 	"github.com/windyskr/acn/internal/event"
+	"github.com/windyskr/acn/internal/hook"
 )
 
-// TypeTurnComplete 是我们关心的唯一事件类型。
-const TypeTurnComplete = "agent-turn-complete"
+// eventTaskStarted 是 Codex 标记「本轮开始」的事件，与 task_complete 成对出现。
+// 拿它当起点比「找最近一条用户输入」更准——用户敲下回车与模型真正开跑之间
+// 可能隔着审批等待。
+const eventTaskStarted = "task_started"
 
-// forwardTimeout 限制链式转发原 notify 程序的等待时长。
-const forwardTimeout = 30 * time.Second
-
-// Payload 是 Codex notify 的 JSON 载荷。
-type Payload struct {
-	Type                 string   `json:"type"`
-	TurnID               string   `json:"turn-id"`
-	ThreadID             string   `json:"thread-id"`
-	Cwd                  string   `json:"cwd"`
-	InputMessages        []string `json:"input-messages"`
-	LastAssistantMessage string   `json:"last-assistant-message"`
+// rolloutRow 是 rollout JSONL 的一行，只声明用得到的字段。
+type rolloutRow struct {
+	Type      string `json:"type"`
+	Timestamp string `json:"timestamp"`
+	Payload   struct {
+		Type string `json:"type"`
+	} `json:"payload"`
 }
 
-// Parse 从 notify 的命令行参数中解析载荷。args 为 acn 收到的全部尾随参数，
-// 取最后一个可解析为 JSON 对象者。
-func Parse(args []string) (Payload, error) {
-	for i := len(args) - 1; i >= 0; i-- {
-		var p Payload
-		if err := json.Unmarshal([]byte(args[i]), &p); err == nil && p.Type != "" {
-			return p, nil
-		}
-	}
-	return Payload{}, fmt.Errorf("参数中未找到 Codex notify JSON 载荷")
-}
-
-// IsTurnComplete 判断是否为一轮结束事件。其余类型（若未来新增）直接忽略。
-func (p Payload) IsTurnComplete() bool { return p.Type == TypeTurnComplete }
-
-// ToEvent 组装通用事件。载荷缺 cwd 时退回进程工作目录——Codex 以自身
-// 工作目录派生 notify 子进程，多数情况下二者一致。
-func (p Payload) ToEvent() event.Event {
-	cwd := strings.TrimSpace(p.Cwd)
-	if cwd == "" {
-		if wd, err := os.Getwd(); err == nil {
-			cwd = wd
-		}
-	}
-	message := strings.TrimSpace(p.LastAssistantMessage)
-	if message == "" && len(p.InputMessages) > 0 {
-		// 没有回复正文时，用用户本轮输入兜底，通知里至少能认出是哪个任务。
-		message = strings.TrimSpace(p.InputMessages[len(p.InputMessages)-1])
-	}
-	return event.Event{
+// FromPayload 由 Stop 载荷组装 Event。
+func FromPayload(p hook.StopPayload, now time.Time) event.Event {
+	ev := event.Event{
 		Source:    event.SourceCodex,
-		Cwd:       cwd,
-		Message:   message,
-		SessionID: firstNonEmpty(p.ThreadID, p.TurnID),
+		Cwd:       p.Cwd,
+		Message:   strings.TrimSpace(p.LastAssistantMessage),
+		SessionID: firstNonEmpty(p.SessionID, p.TurnID),
 	}
+	if started, ok := lastTaskStart(p.TranscriptPath); ok && now.After(started) {
+		ev.DurationMS = now.Sub(started).Milliseconds()
+	}
+	return ev
 }
 
-// Forward 把原始参数原样转发给安装 acn 之前配置的 notify 程序。
+// lastTaskStart 返回 rollout 中最后一条 task_started 的时间。
 //
-// Codex 的 notify 只能配一个程序，acn 接管后必须代为转发，否则会静默破坏
-// 用户已有的集成。转发失败只返回错误由调用方记录，不影响 acn 自身的推送。
-func Forward(ctx context.Context, chain []string, args []string) error {
-	if len(chain) == 0 {
-		return nil
+// Stop hook 触发时 task_complete 未必已落盘，因此以「现在」作为终点，
+// 误差在毫秒级。transcript 不可读时返回 false，耗时按未知处理。
+func lastTaskStart(path string) (time.Time, bool) {
+	var latest time.Time
+	err := hook.ScanTail(path, hook.MaxScanBytes, func(line string) {
+		var row rolloutRow
+		if err := json.Unmarshal([]byte(line), &row); err != nil {
+			return
+		}
+		if row.Type != "event_msg" || row.Payload.Type != eventTaskStarted {
+			return
+		}
+		if ts, err := time.Parse(time.RFC3339, row.Timestamp); err == nil {
+			latest = ts
+		}
+	})
+	if err != nil || latest.IsZero() {
+		return time.Time{}, false
 	}
-	ctx, cancel := context.WithTimeout(ctx, forwardTimeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, chain[0], append(append([]string{}, chain[1:]...), args...)...)
-	cmd.Stdout = os.Stderr // 保持 stdout 干净，子进程输出并入日志流
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("转发至 %s 失败: %w", chain[0], err)
-	}
-	return nil
+	return latest, true
 }
 
 func firstNonEmpty(values ...string) string {

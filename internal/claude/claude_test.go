@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/windyskr/acn/internal/hook"
 )
 
 // writeTranscript 把若干 JSONL 行写入临时 transcript。
@@ -41,7 +43,7 @@ func TestFromPayloadExtractsReplyAndDuration(t *testing.T) {
 		assistantLine("2026-07-26T10:00:30.000Z", "改好了"),
 	)
 
-	ev := FromPayload(StopPayload{
+	ev := FromPayload(hook.StopPayload{
 		SessionID:      "sess-1",
 		TranscriptPath: path,
 		Cwd:            "/work/proj",
@@ -66,7 +68,7 @@ func TestDurationUnknownWithoutUserPrompt(t *testing.T) {
 		assistantLine("2026-07-26T10:00:30.000Z", "完成"),
 	)
 
-	ev := FromPayload(StopPayload{TranscriptPath: path, Cwd: "/work/proj"})
+	ev := FromPayload(hook.StopPayload{TranscriptPath: path, Cwd: "/work/proj"})
 	if ev.DurationMS != 0 {
 		t.Errorf("耗时 = %dms, 期望 0（无法确定起点）", ev.DurationMS)
 	}
@@ -83,7 +85,7 @@ func TestSidechainIgnored(t *testing.T) {
 		`{"type":"assistant","isSidechain":true,"timestamp":"2026-07-26T10:00:20.000Z","message":{"role":"assistant","content":[{"type":"text","text":"子代理回复"}]}}`,
 	)
 
-	ev := FromPayload(StopPayload{TranscriptPath: path, Cwd: "/work/proj"})
+	ev := FromPayload(hook.StopPayload{TranscriptPath: path, Cwd: "/work/proj"})
 	if ev.Message != "主线回复" {
 		t.Errorf("回复 = %q, 期望主线回复（子代理应被忽略）", ev.Message)
 	}
@@ -135,7 +137,7 @@ func TestIsUserPrompt(t *testing.T) {
 
 // transcript 不可读时必须降级产出事件，而不是丢掉这次通知。
 func TestFromPayloadDegradesOnMissingTranscript(t *testing.T) {
-	ev := FromPayload(StopPayload{
+	ev := FromPayload(hook.StopPayload{
 		SessionID:      "sess-2",
 		TranscriptPath: "/nonexistent/transcript.jsonl",
 		Cwd:            "/work/proj",
@@ -156,7 +158,7 @@ func TestCwdFallbackFromTranscript(t *testing.T) {
 		assistantLine("2026-07-26T10:00:10.000Z", "done"),
 	)
 
-	ev := FromPayload(StopPayload{TranscriptPath: path})
+	ev := FromPayload(hook.StopPayload{TranscriptPath: path})
 	if ev.Cwd != "/work/proj" {
 		t.Errorf("cwd = %q, 期望从 transcript 补齐为 /work/proj", ev.Cwd)
 	}
@@ -174,13 +176,14 @@ func TestHugeLineDoesNotBreakScan(t *testing.T) {
 		assistantLine("2026-07-26T10:00:30.000Z", "超大行之后的回复"),
 	)
 
-	ev := FromPayload(StopPayload{TranscriptPath: path, Cwd: "/work/proj"})
+	ev := FromPayload(hook.StopPayload{TranscriptPath: path, Cwd: "/work/proj"})
 	if ev.Message != "超大行之后的回复" {
 		t.Errorf("回复 = %q, 超大行之后的记录被丢弃了", ev.Message)
 	}
 }
 
-func TestParseReadsStdin(t *testing.T) {
+// 端到端：stdin 的 Stop 载荷 → Event。
+func TestReadStopThenFromPayload(t *testing.T) {
 	path := writeTranscript(t,
 		userLine("2026-07-26T10:00:00.000Z", "hi"),
 		assistantLine("2026-07-26T10:00:10.000Z", "done"),
@@ -188,17 +191,11 @@ func TestParseReadsStdin(t *testing.T) {
 	stdin := strings.NewReader(fmt.Sprintf(
 		`{"session_id":"s","transcript_path":%q,"cwd":"/work/proj","hook_event_name":"Stop"}`, path))
 
-	ev, err := Parse(stdin)
+	p, err := hook.ReadStop(stdin)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ev.Message != "done" || ev.DurationMS != 10_000 {
+	if ev := FromPayload(p); ev.Message != "done" || ev.DurationMS != 10_000 {
 		t.Errorf("事件 = %+v", ev)
-	}
-}
-
-func TestParseRejectsBadJSON(t *testing.T) {
-	if _, err := Parse(strings.NewReader("not json")); err == nil {
-		t.Error("非法 JSON 应当报错")
 	}
 }

@@ -31,12 +31,8 @@ type Config struct {
 	Feishu Feishu `json:"feishu"`
 	// Sources 控制各来源是否推送，缺省视为开启。
 	Sources map[string]bool `json:"sources"`
-	// MinDurationSeconds 低于该耗时的任务不推送。仅对能提供耗时的来源生效
-	// （目前只有 Claude Code）。
+	// MinDurationSeconds 低于该耗时的任务不推送。
 	MinDurationSeconds int `json:"min_duration_seconds"`
-	// CodexNotifyChain 保存安装时被 acn 接管的原 Codex notify 程序。
-	// hook 处理完后原样转发，避免破坏用户已有的 Codex 集成；卸载时还原。
-	CodexNotifyChain []string `json:"codex_notify_chain,omitempty"`
 }
 
 // Default 返回未落盘时的默认配置。

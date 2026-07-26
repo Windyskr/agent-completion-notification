@@ -2,14 +2,15 @@
 //
 // 事件流：
 //
-//	Claude Code ──Stop hook（stdin JSON）──┐
-//	                                      ├─→ acn hook ─→ unix socket ─→ acn daemon ─→ 飞书
-//	Codex ───────notify 回调（argv JSON）──┘                （不可用时 hook 自行直发）
+//	Claude Code ──Stop hook──┐
+//	                         ├─→ acn hook ─→ unix socket ─→ acn daemon ─→ 飞书
+//	Codex ───────Stop hook───┘              （daemon 不可用时 hook 自行直发）
+//
+// 两者用的是同一套 Stop hook 契约，载荷都从 stdin 进来。
 package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -30,19 +31,19 @@ const usage = `acn — AI CLI 任务完成通知
 
 用法：
   acn install            接入 Claude Code 与 Codex（写入各自配置，自动备份）
-  acn uninstall          摘除接入并还原 Codex 原有的 notify
+  acn uninstall          摘除接入
   acn status             查看接入状态、配置与 daemon 运行情况
   acn config <k> <v>     修改配置项
   acn test               发送一条测试通知
   acn daemon             前台运行常驻服务（由 brew services 调用）
   acn hook claude        Claude Code 的 Stop hook 入口（读 stdin）
-  acn hook codex [...]   Codex 的 notify 入口（读 argv）
+  acn hook codex         Codex 的 Stop hook 入口（读 stdin）
   acn version            打印版本
 
 配置项（acn config）：
   webhook <url>          飞书自定义机器人地址
   secret <str>           飞书签名密钥（未开启签名校验则留空）
-  min-duration <秒>      低于该耗时不推送，0 为不限（仅 Claude Code 提供耗时）
+  min-duration <秒>      低于该耗时不推送，0 为不限
   claude <on|off>        是否推送 Claude Code
   codex <on|off>         是否推送 Codex
 
@@ -91,39 +92,25 @@ func run(args []string) error {
 	}
 }
 
-// cmdHook 处理来自 AI CLI 的回调。
+// cmdHook 处理来自 AI CLI 的 Stop 回调。
 //
-// 无论内部发生什么都返回 nil：hook 是 AI CLI 的子进程，非零退出码会在用户
-// 的终端里显示报错。通知失败远不如打断工作流严重，因此只在 stderr 留痕。
+// 无论内部发生什么都返回 nil，且**绝不往 stdout 写任何东西**：
+//   - 非零退出码会在用户终端里显示报错；
+//   - Codex 的 Stop hook 若在 stdout 收到 {"decision":"block"}，会自动续跑一轮。
+//
+// 通知失败远不如打断工作流严重，因此一切诊断信息只走 stderr。
 func cmdHook(args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("用法：acn hook <claude|codex>")
 	}
 
-	ev, err := buildHookEvent(args[0], args[1:])
-	switch {
-	case errors.Is(err, errSkip):
-		return nil // 非「一轮结束」的回调，正常忽略
-	case err != nil:
+	ev, err := buildHookEvent(args[0], os.Stdin)
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "acn hook: "+err.Error())
 		return nil
 	}
 	deliver(ev)
 	return nil
-}
-
-// buildHookEvent 按来源解析回调载荷。Codex 分支同时负责链式转发。
-func buildHookEvent(source string, rest []string) (event.Event, error) {
-	switch source {
-	case "claude":
-		return parseClaudeHook(os.Stdin)
-
-	case "codex":
-		return parseCodexHook(context.Background(), rest)
-
-	default:
-		return event.Event{}, fmt.Errorf("未知来源 %q", source)
-	}
 }
 
 // deliver 优先交给 daemon 异步发送；daemon 未运行时当场同步发送。
@@ -181,6 +168,10 @@ func cmdInstall() error {
 		fmt.Println("下一步：acn config webhook <飞书机器人地址>")
 	}
 	fmt.Println("下一步：brew services start acn（不启动也能用，只是每次通知会稍慢）")
+	if st.Codex.Installed {
+		// Codex 要求用户逐条审阅并信任非托管的命令 hook，否则它不会执行。
+		fmt.Println("下一步：在 Codex 里执行 /hooks，信任 acn 的 Stop hook")
+	}
 	fmt.Println("提示：Claude Code 与 Codex 需重启后生效")
 	return nil
 }

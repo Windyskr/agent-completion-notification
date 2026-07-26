@@ -6,15 +6,15 @@ AI CLI 任务完成通知。Claude Code / Codex 跑完一轮，推送到飞书�
 
 ## 原理
 
-两个 CLI 都原生支持任务结束回调，acn 只是接上它们：
+两个 CLI 都原生支持 `Stop` 生命周期 hook，且**载荷 schema 几乎一致**，acn 只是接上它们：
 
 ```
-Claude Code ──Stop hook（stdin JSON）──┐
-                                       ├─→ acn hook ─→ unix socket ─→ acn daemon ─→ 飞书
-Codex ───────notify 回调（argv JSON）──┘              （daemon 未运行时 hook 自行直发）
+Claude Code ──Stop hook──┐
+                         ├─→ acn hook ─→ unix socket ─→ acn daemon ─→ 飞书
+Codex ───────Stop hook───┘              （daemon 未运行时 hook 自行直发）
 ```
 
-daemon 的存在只有一个理由：Claude Code 的 Stop hook 会**阻塞 CLI 返回**。
+daemon 的存在只有一个理由：Stop hook 会**阻塞 CLI 返回**。
 hook 写完 socket 就退出（实测 ~20ms），HTTP 请求丢给 daemon 异步做。
 不启动 daemon 也能用，只是每次通知会多等一次网络往返。
 
@@ -33,20 +33,30 @@ brew services start acn
 | 文件 | 改动 |
 | --- | --- |
 | `~/.claude/settings.json` | 增加一个 `Stop` hook |
-| `~/.codex/config.toml` | 接管顶层 `notify` |
+| `~/.codex/config.toml` | 追加一个 `[[hooks.Stop]]` 块（哨兵注释界定） |
 
-Claude Code 与 Codex 需重启后生效。
+之后还需两步：
 
-### 关于 Codex 的 notify 冲突
+1. Claude Code 与 Codex **重启**后生效；
+2. 在 Codex 里执行 `/hooks`，**信任** acn 的 Stop hook——Codex 要求逐条审阅非托管的命令 hook，不信任就不会执行。
 
-Codex 只允许配一个 `notify` 程序。如果你已经装了别的集成（如 Codex Computer Use），
-acn 会把原有配置存下来并在每次回调时**原样转发**，不会弄坏它。`acn uninstall` 时原样还原。
+## 为什么 Codex 用 hooks 而不是 notify
+
+Codex 的顶层 `notify` 是遗留路径（二进制里那个文件就叫 `legacy_notify.rs`），且**全局只有一个槽位**。抢占它意味着：
+
+- 破坏用户已有的集成（如 Codex Computer Use 就占着这个槽位），除非再实现一套「存下来 → 每次转发 → 卸载还原」的机制；
+- 即便实现了，对方下次安装仍会把 acn 静默顶掉，且没有任何报错。
+
+`[[hooks.Stop]]` 可以多个并存，互不干扰，acn 完全不用碰 `notify`。
+额外好处：hooks 的载荷带 `transcript_path`，Codex 的耗时也能算出来（取 rollout 里最后一条 `task_started`）——notify 的载荷没有起始时间，那条路做不到。
+
+需要 Codex ≥0.129（`hooks` 是默认开启的特性）。
 
 ## 命令
 
 ```
 acn install            接入 Claude Code 与 Codex
-acn uninstall          摘除接入并还原 Codex 原有的 notify
+acn uninstall          摘除接入
 acn status             查看接入状态、配置与 daemon 运行情况
 acn config <k> <v>     修改配置
 acn test               发送一条测试通知
@@ -68,12 +78,15 @@ acn config codex <on|off>       是否推送 Codex
 环境变量 `ACN_FEISHU_WEBHOOK_URL`、`ACN_FEISHU_SECRET` 优先级高于配置文件。
 `ACN_CONFIG_DIR` 可改配置目录。
 
-### 耗时阈值只对 Claude Code 生效
+### 耗时是怎么算的
 
-Claude Code 的耗时由 transcript 里「最近一条真实用户输入」到「最后一条回复」算出
-（tool_result 不算用户输入，否则耗时会被严重低估）。
-Codex 的 notify 载荷不含起始时间，耗时未知，因此 `min-duration` 对它不生效——
-否则会把 Codex 的通知全部挡掉。
+| 来源 | 起点 | 终点 |
+| --- | --- | --- |
+| Claude Code | transcript 里最近一条**真实用户输入**（`tool_result` 不算，否则会严重低估） | 最后一条回复 |
+| Codex | rollout 里最后一条 `task_started` | hook 触发时刻 |
+
+任一来源取不到起点时耗时按未知处理，此时 `min-duration` 不参与判断——
+否则会把该来源的通知全部挡掉。
 
 ## 开发
 
@@ -81,6 +94,10 @@ Codex 的 notify 载荷不含起始时间，耗时未知，因此 `min-duration`
 make test     # go vet + go test -race
 make build    # 产出 ./bin/acn
 ```
+
+一条硬约束：hook 进程**绝不能往 stdout 写任何东西**。
+Codex 的 Stop hook 若在 stdout 收到 `{"decision":"block"}` 会自动续跑一轮。
+所有诊断信息一律走 stderr。
 
 ## 许可
 
