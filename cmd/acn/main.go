@@ -31,15 +31,19 @@ var version = "dev"
 const usage = `acn (Agent Completion Notification) — AI CLI 任务完成通知
 
 用法：
-  acn install            接入 Claude Code 与 Codex（写入各自配置，自动备份）
-  acn uninstall          摘除接入
+  acn install [目标]     接入 AI CLI（写入其配置，自动备份）
+  acn uninstall [目标]   摘除接入
   acn status             查看接入状态、配置与 daemon 运行情况
+  acn doctor             自检整条链路，并实际推送一条通知
   acn config <k> <v>     修改配置项
-  acn test               发送一条测试通知
   acn daemon             前台运行常驻服务（由 brew services 调用）
   acn hook claude        Claude Code 的 Stop hook 入口（读 stdin）
   acn hook codex         Codex 的 Stop hook 入口（读 stdin）
   acn version            打印版本
+
+目标（install / uninstall，省略则两个都做）：
+  claude                 仅 Claude Code
+  codex                  仅 Codex
 
 配置项（acn config）：
   webhook <url>          飞书自定义机器人地址
@@ -69,15 +73,15 @@ func run(args []string) error {
 
 	switch args[0] {
 	case "install":
-		return cmdInstall()
+		return cmdInstall(args[1:])
 	case "uninstall":
-		return cmdUninstall()
+		return cmdUninstall(args[1:])
 	case "status":
 		return cmdStatus()
 	case "config":
 		return cmdConfig(args[1:])
-	case "test":
-		return cmdTest()
+	case "doctor", "test":
+		return cmdDoctor()
 	case "daemon":
 		return cmdDaemon()
 	case "hook":
@@ -150,13 +154,16 @@ func cmdDaemon() error {
 	return daemon.Run(ctx)
 }
 
-func cmdInstall() error {
+func cmdInstall(targets []string) error {
+	if err := install.ValidateTargets(targets); err != nil {
+		return err
+	}
 	exe, err := install.Executable()
 	if err != nil {
 		return fmt.Errorf("获取自身路径失败: %w", err)
 	}
 
-	st, installErr := install.Install(exe)
+	st, installErr := install.Install(exe, targets...)
 	printTarget(st.Claude)
 	printTarget(st.Codex)
 	if installErr != nil {
@@ -168,17 +175,19 @@ func cmdInstall() error {
 	if !cfg.FeishuReady() {
 		fmt.Println("下一步：acn config webhook <飞书机器人地址>")
 	}
-	fmt.Println("下一步：brew services start acn（不启动也能用，只是每次通知会稍慢）")
 	if st.Codex.Installed {
 		// Codex 要求用户逐条审阅并信任非托管的命令 hook，否则它不会执行。
 		fmt.Println("下一步：在 Codex 里执行 /hooks，信任 acn 的 Stop hook")
 	}
-	fmt.Println("提示：Claude Code 与 Codex 需重启后生效")
+	fmt.Println("提示：两个 CLI 均需重启后生效；装好后可用 acn doctor 自检")
 	return nil
 }
 
-func cmdUninstall() error {
-	st, err := install.Uninstall()
+func cmdUninstall(targets []string) error {
+	if err := install.ValidateTargets(targets); err != nil {
+		return err
+	}
+	st, err := install.Uninstall(targets...)
 	printTarget(st.Claude)
 	printTarget(st.Codex)
 	return err
@@ -211,38 +220,6 @@ func cmdStatus() error {
 	fmt.Println("  " + mark(running) + " daemon " + daemonState(running))
 	if !running {
 		fmt.Println("    （未运行时 hook 会自行发送，功能不受影响）")
-	}
-	return nil
-}
-
-func cmdTest() error {
-	cfg, err := config.Load()
-	if err != nil {
-		return err
-	}
-	if !cfg.FeishuReady() {
-		return fmt.Errorf("尚未配置飞书 webhook，先运行：acn config webhook <地址>")
-	}
-
-	cwd, _ := os.Getwd()
-	ev := event.Event{
-		Source:     event.SourceClaude,
-		Cwd:        cwd,
-		Message:    "这是一条来自 acn 的测试通知。收到即表示配置正确。",
-		DurationMS: 42_000,
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), notify.SendTimeout)
-	defer cancel()
-
-	// 测试直发，不经 daemon——要验证的是渠道配置本身。
-	var failed bool
-	for _, r := range notify.Dispatch(ctx, cfg, notify.Build(cfg), ev) {
-		fmt.Println("  " + r.String())
-		failed = failed || r.Err != nil
-	}
-	if failed {
-		return fmt.Errorf("测试通知发送失败")
 	}
 	return nil
 }

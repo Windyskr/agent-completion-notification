@@ -45,7 +45,7 @@ func installClaude(exe string) error {
 		entry := hookGroup{
 			Hooks: []hookEntry{{
 				Type:    "command",
-				Command: shellQuote(exe) + " hook claude",
+				Command: hookCommand(exe, "claude"),
 				Timeout: claudeHookTimeout,
 			}},
 		}
@@ -81,10 +81,27 @@ func queryClaude() TargetStatus {
 	if _, found := stripACNGroups(groups); found {
 		st.Installed = true
 		st.Detail = claudeHookEvent + " hook 已安装"
+		st.Exe = recordedExe(groups)
 	} else {
 		st.Detail = "未安装"
 	}
 	return st
+}
+
+// recordedExe 取出已安装条目里记录的 acn 路径。
+func recordedExe(groups []json.RawMessage) string {
+	for _, raw := range groups {
+		var g hookGroup
+		if err := json.Unmarshal(raw, &g); err != nil {
+			continue
+		}
+		for _, h := range g.Hooks {
+			if isACNCommand(h.Command) {
+				return extractExe(h.Command, "claude")
+			}
+		}
+	}
+	return ""
 }
 
 // editClaudeSettings 读取 settings.json，交由 mutate 改写 Stop 分组后写回。

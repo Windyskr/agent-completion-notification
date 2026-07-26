@@ -59,13 +59,37 @@ Codex 的顶层 `notify` 是遗留路径（二进制里那个文件就叫 `legac
 ## 命令
 
 ```
-acn install            接入 Claude Code 与 Codex
-acn uninstall          摘除接入
-acn status             查看接入状态、配置与 daemon 运行情况
-acn config <k> <v>     修改配置
-acn test               发送一条测试通知
-acn daemon             前台运行常驻服务（brew services 调用）
+acn install [claude|codex]     接入 AI CLI，省略目标则两个都装
+acn uninstall [claude|codex]   摘除接入
+acn status                     查看接入状态、配置与 daemon 运行情况
+acn doctor                     自检整条链路，并实际推送一条通知
+acn config <k> <v>             修改配置
+acn daemon                     前台运行常驻服务（brew services 调用）
 ```
+
+### acn doctor
+
+装好之后跑一次，它会主动核对而不只是回显配置：
+
+```
+✓ 二进制         /opt/homebrew/bin/acn
+✓ Claude Code    hook 已安装 → /opt/homebrew/bin/acn
+✓ Codex          hook 已安装 → /opt/homebrew/bin/acn
+? Codex 信任     无法自动确认（Codex 未公开该状态）
+    → 若 Codex 侧收不到通知，在 Codex 里执行 /hooks 信任 acn
+✓ 飞书 webhook   https://open.feishu.cn/…/5c5b…92b9
+✓ daemon         未运行（hook 将自行发送，功能不受影响）
+✓ 实际推送       已发出，请确认飞书是否收到
+```
+
+其中最要紧的是**路径核对**：hook 里写的是绝对路径，二进制换了位置（重装到别处、
+删掉软链）之后配置仍指向旧路径，两个 CLI 会静默地什么都不做。doctor 会报 `✗` 并
+提示重跑 `acn install`。
+
+有检查未通过时退出码为 1，可用于脚本。
+
+Codex 的 hook 信任状态按哈希存在其内部，没有可靠的外部读取方式，
+因此这一项永远是 `?`——不会假装检查过。
 
 ## 配置
 

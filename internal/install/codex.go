@@ -87,6 +87,7 @@ func queryCodex() TargetStatus {
 	if strings.Contains(string(data), codexBegin) {
 		st.Installed = true
 		st.Detail = "Stop hook 已安装"
+		st.Exe = recordedCodexExe(string(data))
 		// 只在装了之后才提醒——没装的话这个前提无关紧要。
 		if hooksDisabled(string(data)) {
 			st.Warning = "config.toml 里 [features] hooks = false，Stop hook 不会触发"
@@ -95,6 +96,24 @@ func queryCodex() TargetStatus {
 		st.Detail = "未安装"
 	}
 	return st
+}
+
+// recordedCodexExe 从 acn 块里取出记录的 acn 路径。
+func recordedCodexExe(content string) string {
+	for _, line := range splitLines(content) {
+		key, value, ok := strings.Cut(strings.TrimSpace(line), "=")
+		if !ok || strings.TrimSpace(key) != "command" {
+			continue
+		}
+		value = strings.TrimSpace(value)
+		if len(value) >= 2 && value[0] == '"' && value[len(value)-1] == '"' {
+			unescaped := strings.NewReplacer(`\"`, `"`, `\\`, `\`).Replace(value[1 : len(value)-1])
+			if exe := extractExe(unescaped, "codex"); exe != "" {
+				return exe
+			}
+		}
+	}
+	return ""
 }
 
 // codexHookBlock 渲染要写入的块。
@@ -108,7 +127,7 @@ func codexHookBlock(exe string) string {
 		"",
 		"[[hooks.Stop.hooks]]",
 		`type = "command"`,
-		"command = " + quoteTOMLString(shellQuote(exe)+" hook codex"),
+		"command = " + quoteTOMLString(hookCommand(exe, "codex")),
 		fmt.Sprintf("timeout = %d", codexHookTimeout),
 		`statusMessage = "acn 通知"`,
 		codexEnd,

@@ -249,3 +249,18 @@ func TestHooksDisabled(t *testing.T) {
 		})
 	}
 }
+
+// withCodexHomeIn 在指定 HOME 下准备 Codex 配置，供跨目标的测试复用。
+func withCodexHomeIn(t *testing.T, home, content string) string {
+	t.Helper()
+	dir := filepath.Join(home, ".codex")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEX_HOME", dir)
+	path := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
