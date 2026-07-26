@@ -1,6 +1,7 @@
 # acn
 
-AI CLI 任务完成通知。Claude Code / Codex 跑完一轮，推送到飞书。
+**Agent Completion Notification** —— AI CLI 任务完成通知。
+Claude Code / Codex 跑完一轮，推送到飞书。
 
 单个 Go 二进制，零依赖，无界面。事件驱动——不轮询日志、不猜测状态。
 
@@ -68,7 +69,7 @@ acn daemon             前台运行常驻服务（brew services 调用）
 
 ## 配置
 
-配置在 `~/.config/acn/config.json`（权限 0600），改完即时生效，无需重启 daemon。
+配置在 `~/.acn/config.json`（权限 0600），改完即时生效，无需重启 daemon。
 
 ```
 acn config webhook <url>        飞书自定义机器人地址

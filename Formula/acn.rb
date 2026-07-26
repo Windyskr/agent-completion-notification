@@ -1,7 +1,7 @@
 # Homebrew Formula。放在 tap 仓库里即可 brew install，或本地：
 #   brew install --build-from-source ./Formula/acn.rb
 class Acn < Formula
-  desc "AI CLI 任务完成通知（Claude Code / Codex → 飞书）"
+  desc "Agent Completion Notification - AI CLI 任务完成通知（Claude Code / Codex → 飞书）"
   homepage "https://github.com/windyskr/acn"
   url "https://github.com/windyskr/acn/archive/refs/tags/v0.1.0.tar.gz"
   sha256 "0000000000000000000000000000000000000000000000000000000000000000"

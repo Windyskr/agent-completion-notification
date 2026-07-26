@@ -1,6 +1,6 @@
 // Package config 负责 acn 的配置读写与路径解析。
 //
-// 配置只有一个文件：$ACN_CONFIG_DIR（默认 ~/.config/acn）下的 config.json。
+// 配置只有一个文件：$ACN_CONFIG_DIR（默认 ~/.acn）下的 config.json。
 // 敏感字段（webhook 地址、签名密钥）支持环境变量覆盖，便于 CI 与临时排查。
 package config
 
@@ -51,7 +51,7 @@ func Dir() string {
 	if err != nil {
 		return ".acn"
 	}
-	return filepath.Join(home, ".config", "acn")
+	return filepath.Join(home, ".acn")
 }
 
 // Path 返回配置文件路径。

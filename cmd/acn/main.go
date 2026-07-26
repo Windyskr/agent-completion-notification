@@ -1,4 +1,5 @@
-// 命令 acn 在 AI CLI（Claude Code / Codex）完成任务时推送通知。
+// 命令 acn（Agent Completion Notification）在 AI CLI（Claude Code / Codex）
+// 完成任务时推送通知。
 //
 // 事件流：
 //
@@ -27,7 +28,7 @@ import (
 // version 由构建时通过 -ldflags "-X main.version=..." 注入。
 var version = "dev"
 
-const usage = `acn — AI CLI 任务完成通知
+const usage = `acn (Agent Completion Notification) — AI CLI 任务完成通知
 
 用法：
   acn install            接入 Claude Code 与 Codex（写入各自配置，自动备份）
