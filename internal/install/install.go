@@ -22,6 +22,9 @@ type TargetStatus struct {
 	Path      string
 	Installed bool
 	Detail    string
+	// Warning 非空表示：配置写进去了，但对方运行时不会真的触发。
+	// 这类失败是无声的，必须显式说出来。
+	Warning string
 }
 
 // Status 汇总全部集成点。

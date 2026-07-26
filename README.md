@@ -50,7 +50,10 @@ Codex 的顶层 `notify` 是遗留路径（二进制里那个文件就叫 `legac
 `[[hooks.Stop]]` 可以多个并存，互不干扰，acn 完全不用碰 `notify`。
 额外好处：hooks 的载荷带 `transcript_path`，Codex 的耗时也能算出来（取 rollout 里最后一条 `task_started`）——notify 的载荷没有起始时间，那条路做不到。
 
-需要 Codex ≥0.129（`hooks` 是默认开启的特性）。
+**要求 Codex ≥0.129**（`hooks` 是默认开启的特性）。acn 只面向新版本，不为旧版做兼容降级。
+
+若你在 `config.toml` 里写过 `[features] hooks = false`，块虽然能写进去但永远不会触发——
+`acn status` 会就此发出警告。
 
 ## 命令
 

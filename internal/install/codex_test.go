@@ -198,3 +198,54 @@ func TestStripACNBlockIgnoresUnpairedSentinel(t *testing.T) {
 		t.Errorf("哨兵不成对时不应改动内容:\n%s", got)
 	}
 }
+
+// [features] hooks = false 时块照样写得进去，但永远不会触发——必须警告。
+func TestQueryCodexWarnsWhenHooksDisabled(t *testing.T) {
+	withCodexHome(t, "[features]\nhooks = false\n\n"+sampleConfig)
+	if err := installCodex("/usr/local/bin/acn"); err != nil {
+		t.Fatal(err)
+	}
+
+	st := queryCodex()
+	if !st.Installed {
+		t.Fatal("应识别为已安装")
+	}
+	if !strings.Contains(st.Warning, "hooks = false") {
+		t.Errorf("未就 hooks 被禁用发出警告，Warning = %q", st.Warning)
+	}
+}
+
+// 正常配置不该有警告——误报比不报更糟。
+func TestQueryCodexNoWarningNormally(t *testing.T) {
+	withCodexHome(t, sampleConfig)
+	if err := installCodex("/usr/local/bin/acn"); err != nil {
+		t.Fatal(err)
+	}
+	if w := queryCodex().Warning; w != "" {
+		t.Errorf("正常配置不应有警告，得到 %q", w)
+	}
+}
+
+func TestHooksDisabled(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want bool
+	}{
+		{"显式关闭", "[features]\nhooks = false\n", true},
+		{"显式开启", "[features]\nhooks = true\n", false},
+		{"未提及", "[features]\ngoals = true\n", false},
+		{"无 features 表", sampleConfig, false},
+		{"注释掉的关闭", "[features]\n# hooks = false\n", false},
+		{"带行内注释", "[features]\nhooks = false # 关掉\n", true},
+		{"别的表里的同名键", "[other]\nhooks = false\n", false},
+		{"features 表之后的其它表", "[features]\ngoals = true\n[other]\nhooks = false\n", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := hooksDisabled(c.in); got != c.want {
+				t.Errorf("hooksDisabled = %v, 期望 %v", got, c.want)
+			}
+		})
+	}
+}

@@ -295,6 +295,9 @@ func cmdConfig(args []string) error {
 
 func printTarget(t install.TargetStatus) {
 	fmt.Printf("  %s %s：%s\n", mark(t.Installed), t.Name, t.Detail)
+	if t.Warning != "" {
+		fmt.Printf("    ⚠ %s\n", t.Warning)
+	}
 }
 
 func describeWebhook(cfg config.Config) string {

@@ -87,6 +87,10 @@ func queryCodex() TargetStatus {
 	if strings.Contains(string(data), codexBegin) {
 		st.Installed = true
 		st.Detail = "Stop hook 已安装"
+		// 只在装了之后才提醒——没装的话这个前提无关紧要。
+		if hooksDisabled(string(data)) {
+			st.Warning = "config.toml 里 [features] hooks = false，Stop hook 不会触发"
+		}
 	} else {
 		st.Detail = "未安装"
 	}
@@ -110,6 +114,32 @@ func codexHookBlock(exe string) string {
 		codexEnd,
 		"",
 	}, "\n")
+}
+
+// hooksDisabled 判断用户是否在 [features] 里显式关掉了 hooks。
+// 关掉之后块照样写得进去，但永远不会触发——这种无声失败必须说出来。
+func hooksDisabled(content string) bool {
+	inFeatures := false
+	for _, line := range splitLines(content) {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "[") {
+			inFeatures = trimmed == "[features]"
+			continue
+		}
+		if !inFeatures {
+			continue
+		}
+		key, value, ok := strings.Cut(trimmed, "=")
+		if !ok || strings.TrimSpace(key) != "hooks" {
+			continue
+		}
+		value, _, _ = strings.Cut(value, "#") // 去掉行内注释
+		return strings.TrimSpace(value) == "false"
+	}
+	return false
 }
 
 // stripACNBlock 删除哨兵之间的内容（含哨兵本身）与其前导空行。
