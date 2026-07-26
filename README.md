@@ -3,7 +3,7 @@
 **Agent Completion Notification** —— AI CLI 任务完成通知。
 Claude Code / Codex 跑完一轮，推送到飞书。
 
-单个 Go 二进制，零依赖，无界面。事件驱动——不轮询日志、不猜测状态。
+单个 Go 二进制，零依赖，无界面，无常驻进程。
 
 ## 原理
 
@@ -11,13 +11,12 @@ Claude Code / Codex 跑完一轮，推送到飞书。
 
 ```
 Claude Code ──Stop hook──┐
-                         ├─→ acn hook ─→ unix socket ─→ acn daemon ─→ 飞书
-Codex ───────Stop hook───┘              （daemon 未运行时 hook 自行直发）
+                         ├─→ acn hook ─→ 飞书
+Codex ───────Stop hook───┘
 ```
 
-daemon 的存在只有一个理由：Stop hook 会**阻塞 CLI 返回**。
-hook 写完 socket 就退出（实测 ~20ms），HTTP 请求丢给 daemon 异步做。
-不启动 daemon 也能用，只是每次通知会多等一次网络往返。
+hook 是个短命进程：解析载荷、发一次 HTTP、退出。全程约 120ms，其中约 80ms
+是飞书服务端的处理时间。没有 daemon，没有 socket，没有要管的服务。
 
 ## 安装
 
@@ -26,7 +25,7 @@ brew install windyskr/tap/acn      # 或：go install github.com/windyskr/acn/cm
 
 acn config webhook https://open.feishu.cn/open-apis/bot/v2/hook/xxxx
 acn install
-brew services start acn
+acn doctor                          # 自检 + 实际推送一条
 ```
 
 `acn install` 会改写这两个文件（**改写前自动备份为 `*.acn.bak`**）：
@@ -54,17 +53,16 @@ Codex 的顶层 `notify` 是遗留路径（二进制里那个文件就叫 `legac
 **要求 Codex ≥0.129**（`hooks` 是默认开启的特性）。acn 只面向新版本，不为旧版做兼容降级。
 
 若你在 `config.toml` 里写过 `[features] hooks = false`，块虽然能写进去但永远不会触发——
-`acn status` 会就此发出警告。
+`acn status` 与 `acn doctor` 会就此发出警告。
 
 ## 命令
 
 ```
 acn install [claude|codex]     接入 AI CLI，省略目标则两个都装
 acn uninstall [claude|codex]   摘除接入
-acn status                     查看接入状态、配置与 daemon 运行情况
+acn status                     查看接入状态与配置
 acn doctor                     自检整条链路，并实际推送一条通知
 acn config <k> <v>             修改配置
-acn daemon                     前台运行常驻服务（brew services 调用）
 ```
 
 ### acn doctor
@@ -78,7 +76,6 @@ acn daemon                     前台运行常驻服务（brew services 调用�
 ? Codex 信任     无法自动确认（Codex 未公开该状态）
     → 若 Codex 侧收不到通知，在 Codex 里执行 /hooks 信任 acn
 ✓ 飞书 webhook   https://open.feishu.cn/…/5c5b…92b9
-✓ daemon         未运行（hook 将自行发送，功能不受影响）
 ✓ 实际推送       已发出，请确认飞书是否收到
 ```
 
@@ -93,7 +90,7 @@ Codex 的 hook 信任状态按哈希存在其内部，没有可靠的外部读�
 
 ## 配置
 
-配置在 `~/.acn/config.json`（权限 0600），改完即时生效，无需重启 daemon。
+配置在 `~/.acn/config.json`（权限 0600），改完即时生效。
 
 ```
 acn config webhook <url>        飞书自定义机器人地址
@@ -126,6 +123,15 @@ make build    # 产出 ./bin/acn
 一条硬约束：hook 进程**绝不能往 stdout 写任何东西**。
 Codex 的 Stop hook 若在 stdout 收到 `{"decision":"block"}` 会自动续跑一轮。
 所有诊断信息一律走 stderr。
+
+### 曾经有过、后来删掉的
+
+一个 Unix socket + 常驻 daemon，用于让 hook 写完就退出、把 HTTP 请求丢给后台做。
+实测收益只有 78ms（两条路径的本地开销都是 45ms，差别仅是一次约 80ms 的飞书往返），
+却要付出常驻服务、socket 生命周期、两套投递路径和服务管理的代价，因此移除。
+
+连带删掉的还有按指纹去重——它防的是「daemon 与直发重复上报」，而那两条路径本就是
+二选一，构造不出重复；反倒可能把两次内容相同的短任务通知误吞一条。
 
 ## 许可
 

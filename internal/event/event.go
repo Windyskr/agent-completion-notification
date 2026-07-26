@@ -6,8 +6,6 @@
 package event
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -21,10 +19,6 @@ const (
 
 // messagePreviewRunes 限制推送正文里回复原文的长度，避免把整篇回答塞进通知。
 const messagePreviewRunes = 500
-
-// fingerprintRunes 参与去重指纹的回复前缀长度。取前缀而非全文，是为了让
-// 「同一次完成经由不同路径上报」仍能命中同一指纹。
-const fingerprintRunes = 240
 
 // Event 是一次 AI CLI 任务完成。
 type Event struct {
@@ -56,14 +50,6 @@ func (e Event) SourceLabel() string {
 	default:
 		return e.Source
 	}
-}
-
-// Fingerprint 标识「同一次完成」。daemon 路径与 hook 直发路径可能先后触发，
-// 靠它在时间窗口内压掉重复推送。
-func (e Event) Fingerprint() string {
-	raw := strings.Join([]string{e.Source, e.Cwd, truncate(collapse(e.Message), fingerprintRunes)}, "\x00")
-	sum := sha256.Sum256([]byte(raw))
-	return hex.EncodeToString(sum[:16])
 }
 
 // Title 形如 "[Claude Code] acn 任务完成"。
@@ -103,11 +89,6 @@ func FormatDuration(ms int64) string {
 	default:
 		return fmt.Sprintf("%dh%dm", sec/3600, (sec%3600)/60)
 	}
-}
-
-// collapse 折叠所有连续空白，让换行差异不影响指纹。
-func collapse(s string) string {
-	return strings.Join(strings.Fields(s), " ")
 }
 
 // truncate 按字符（而非字节）截断，避免切断中文。

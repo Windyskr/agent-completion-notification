@@ -86,28 +86,3 @@ func TestBodyTruncatesLongMessage(t *testing.T) {
 		t.Errorf("截断后仍有 %d 个字符，超过上限 %d", strings.Count(body, "中"), messagePreviewRunes)
 	}
 }
-
-// 同一次完成的两条上报（换行/空白差异）必须命中同一指纹。
-func TestFingerprintIgnoresWhitespace(t *testing.T) {
-	a := Event{Source: SourceClaude, Cwd: "/work/acn", Message: "改好了\n\n收工"}
-	b := Event{Source: SourceClaude, Cwd: "/work/acn", Message: "改好了 收工"}
-
-	if a.Fingerprint() != b.Fingerprint() {
-		t.Error("空白差异导致指纹不同，去重会失效")
-	}
-}
-
-// 不同来源/目录/内容必须是不同指纹，否则会误压掉真实通知。
-func TestFingerprintDistinguishes(t *testing.T) {
-	base := Event{Source: SourceClaude, Cwd: "/work/acn", Message: "done"}
-	others := []Event{
-		{Source: SourceCodex, Cwd: "/work/acn", Message: "done"},
-		{Source: SourceClaude, Cwd: "/work/other", Message: "done"},
-		{Source: SourceClaude, Cwd: "/work/acn", Message: "别的回复"},
-	}
-	for _, o := range others {
-		if base.Fingerprint() == o.Fingerprint() {
-			t.Errorf("指纹与 %+v 相同，会误判为重复", o)
-		}
-	}
-}

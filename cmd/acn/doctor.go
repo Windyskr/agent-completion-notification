@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/windyskr/acn/internal/config"
-	"github.com/windyskr/acn/internal/daemon"
 	"github.com/windyskr/acn/internal/event"
 	"github.com/windyskr/acn/internal/install"
 	"github.com/windyskr/acn/internal/notify"
@@ -61,7 +60,6 @@ func cmdDoctor() error {
 		checkTarget(st.Codex),
 		checkCodexTrust(st.Codex),
 		checkWebhook(cfg),
-		checkDaemon(),
 	}
 	checks = append(checks, checkDelivery(cfg))
 
@@ -197,14 +195,6 @@ func checkWebhook(cfg config.Config) check {
 	return check{"飞书 webhook", levelOK, detail, ""}
 }
 
-func checkDaemon() check {
-	if daemon.Running() {
-		return check{"daemon", levelOK, "运行中", ""}
-	}
-	// 不是故障：hook 会自行直发，只是慢一点。
-	return check{"daemon", levelOK, "未运行（hook 将自行发送，功能不受影响）", ""}
-}
-
 // checkDelivery 真的推一条，走与 hook 完全相同的路径。
 func checkDelivery(cfg config.Config) check {
 	if !cfg.FeishuReady() {
@@ -219,16 +209,12 @@ func checkDelivery(cfg config.Config) check {
 		DurationMS: 42_000,
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), notify.SendTimeout)
-	defer cancel()
-
-	for _, r := range notify.Dispatch(ctx, cfg, notify.Build(cfg), ev) {
-		if r.Err != nil {
-			return check{"实际推送", levelFail, r.String(), "检查 webhook 地址与网络"}
-		}
-		if r.Skipped != "" {
-			return check{"实际推送", levelWarn, r.String(), ""}
-		}
+	skipped, err := notify.Send(context.Background(), cfg, ev)
+	switch {
+	case err != nil:
+		return check{"实际推送", levelFail, err.Error(), "检查 webhook 地址与网络"}
+	case skipped != "":
+		return check{"实际推送", levelWarn, "未推送（" + skipped + "）", ""}
 	}
 	return check{"实际推送", levelOK, "已发出，请确认飞书是否收到", ""}
 }

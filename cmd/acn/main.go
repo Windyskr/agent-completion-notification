@@ -4,8 +4,8 @@
 // 事件流：
 //
 //	Claude Code ──Stop hook──┐
-//	                         ├─→ acn hook ─→ unix socket ─→ acn daemon ─→ 飞书
-//	Codex ───────Stop hook───┘              （daemon 不可用时 hook 自行直发）
+//	                         ├─→ acn hook ─→ 飞书
+//	Codex ───────Stop hook───┘
 //
 // 两者用的是同一套 Stop hook 契约，载荷都从 stdin 进来。
 package main
@@ -14,12 +14,9 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 
 	"github.com/windyskr/acn/internal/config"
-	"github.com/windyskr/acn/internal/daemon"
 	"github.com/windyskr/acn/internal/event"
 	"github.com/windyskr/acn/internal/install"
 	"github.com/windyskr/acn/internal/notify"
@@ -33,10 +30,9 @@ const usage = `acn (Agent Completion Notification) — AI CLI 任务完成通知
 用法：
   acn install [目标]     接入 AI CLI（写入其配置，自动备份）
   acn uninstall [目标]   摘除接入
-  acn status             查看接入状态、配置与 daemon 运行情况
+  acn status             查看接入状态与配置
   acn doctor             自检整条链路，并实际推送一条通知
   acn config <k> <v>     修改配置项
-  acn daemon             前台运行常驻服务（由 brew services 调用）
   acn hook claude        Claude Code 的 Stop hook 入口（读 stdin）
   acn hook codex         Codex 的 Stop hook 入口（读 stdin）
   acn version            打印版本
@@ -55,7 +51,7 @@ const usage = `acn (Agent Completion Notification) — AI CLI 任务完成通知
 快速开始：
   acn config webhook https://open.feishu.cn/open-apis/bot/v2/hook/xxxx
   acn install
-  brew services start acn
+  acn doctor
 `
 
 func main() {
@@ -82,8 +78,6 @@ func run(args []string) error {
 		return cmdConfig(args[1:])
 	case "doctor", "test":
 		return cmdDoctor()
-	case "daemon":
-		return cmdDaemon()
 	case "hook":
 		return cmdHook(args[1:])
 	case "version", "--version", "-v":
@@ -118,40 +112,25 @@ func cmdHook(args []string) error {
 	return nil
 }
 
-// deliver 优先交给 daemon 异步发送；daemon 未运行时当场同步发送。
+// deliver 在当前进程内完成投递。
 //
-// 走 daemon 的意义在于 Claude Code 的 Stop hook 会阻塞 CLI 返回：写完 socket
-// 立即退出，用户不必等一次 HTTP 往返。
+// 曾经这里有一条「先丢给常驻 daemon 异步发」的快路径，实测只省 78ms
+// （本地开销 45ms 两者相同，差的仅是一次约 80ms 的飞书往返），
+// 却要付出常驻服务、socket 生命周期与两套投递路径的代价，已移除。
 func deliver(ev event.Event) {
-	if err := daemon.Send(ev); err == nil {
-		return
-	}
-	sendDirect(ev)
-}
-
-// sendDirect 在当前进程内完成投递。
-func sendDirect(ev event.Event) {
 	cfg, err := config.Load()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "acn: 加载配置失败: "+err.Error())
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), notify.SendTimeout)
-	defer cancel()
 
-	for _, r := range notify.Dispatch(ctx, cfg, notify.Build(cfg), ev) {
-		if r.Err != nil {
-			fmt.Fprintln(os.Stderr, "acn: "+r.String())
-		}
+	skipped, err := notify.Send(context.Background(), cfg, ev)
+	switch {
+	case err != nil:
+		fmt.Fprintln(os.Stderr, "acn: 推送失败: "+err.Error())
+	case skipped != "":
+		fmt.Fprintln(os.Stderr, "acn: 未推送（"+skipped+"）")
 	}
-}
-
-// cmdDaemon 前台运行服务，收到 SIGINT/SIGTERM 后优雅退出
-// （launchd 与 brew services 都靠信号停止进程）。
-func cmdDaemon() error {
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-	return daemon.Run(ctx)
 }
 
 func cmdInstall(targets []string) error {
@@ -215,12 +194,6 @@ func cmdStatus() error {
 	fmt.Printf("  · 来源开关：claude=%s codex=%s\n",
 		onOff(cfg.SourceEnabled(event.SourceClaude)), onOff(cfg.SourceEnabled(event.SourceCodex)))
 
-	running := daemon.Running()
-	fmt.Println("\n服务：")
-	fmt.Println("  " + mark(running) + " daemon " + daemonState(running))
-	if !running {
-		fmt.Println("    （未运行时 hook 会自行发送，功能不受影响）")
-	}
 	return nil
 }
 
@@ -329,11 +302,4 @@ func onOff(v bool) string {
 		return "on"
 	}
 	return "off"
-}
-
-func daemonState(running bool) string {
-	if running {
-		return "运行中（" + config.SocketPath() + "）"
-	}
-	return "未运行"
 }

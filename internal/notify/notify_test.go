@@ -2,26 +2,15 @@ package notify
 
 import (
 	"context"
-	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/windyskr/acn/internal/config"
 	"github.com/windyskr/acn/internal/event"
 )
-
-// stubNotifier 记录是否被调用，用于验证 Gate 的拦截行为。
-type stubNotifier struct {
-	name   string
-	err    error
-	called bool
-}
-
-func (s *stubNotifier) Name() string { return s.name }
-func (s *stubNotifier) Send(context.Context, event.Event) error {
-	s.called = true
-	return s.err
-}
 
 func TestGateBlocksDisabledSource(t *testing.T) {
 	cfg := config.Config{Sources: map[string]bool{"codex": false}}
@@ -45,7 +34,7 @@ func TestGateAppliesDurationThreshold(t *testing.T) {
 	}
 }
 
-// 耗时未知（Codex）时阈值不能生效，否则会把该来源的通知全部挡掉。
+// 耗时未知时阈值不能生效，否则会把取不到起点的通知全部挡掉。
 func TestGateSkipsThresholdWhenDurationUnknown(t *testing.T) {
 	cfg := config.Config{MinDurationSeconds: 30}
 	if reason := Gate(cfg, event.Event{Source: event.SourceCodex, DurationMS: 0}); reason != "" {
@@ -53,52 +42,74 @@ func TestGateSkipsThresholdWhenDurationUnknown(t *testing.T) {
 	}
 }
 
-// 被 Gate 拦下时，渠道一次都不该被调用。
-func TestDispatchSkipsChannelsWhenGated(t *testing.T) {
-	cfg := config.Config{Sources: map[string]bool{"claude": false}}
-	stub := &stubNotifier{name: "stub"}
+// 被 Gate 拦下时不得发出任何请求。
+func TestSendSkipsWithoutHTTPCall(t *testing.T) {
+	var hit bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hit = true
+		io.WriteString(w, `{"code":0}`)
+	}))
+	defer srv.Close()
 
-	results := Dispatch(context.Background(), cfg, []Notifier{stub}, event.Event{Source: event.SourceClaude})
-
-	if stub.called {
-		t.Error("被拦截的事件仍调用了渠道")
+	cfg := config.Config{
+		Feishu:  config.Feishu{WebhookURL: srv.URL},
+		Sources: map[string]bool{"claude": false},
 	}
-	if len(results) != 1 || results[0].Skipped == "" {
-		t.Errorf("结果 = %+v, 期望一条跳过记录", results)
-	}
-}
+	skipped, err := Send(context.Background(), cfg, event.Event{Source: event.SourceClaude})
 
-func TestDispatchWithoutChannelsReportsSkip(t *testing.T) {
-	results := Dispatch(context.Background(), config.Config{}, nil, event.Event{Source: event.SourceClaude})
-	if len(results) != 1 || !strings.Contains(results[0].Skipped, "未配置") {
-		t.Errorf("结果 = %+v, 期望提示未配置渠道", results)
+	if err != nil {
+		t.Fatal(err)
 	}
-}
-
-// 单个渠道失败不能影响其余渠道。
-func TestDispatchIsolatesChannelFailures(t *testing.T) {
-	bad := &stubNotifier{name: "bad", err: errors.New("boom")}
-	good := &stubNotifier{name: "good"}
-
-	results := Dispatch(context.Background(), config.Config{}, []Notifier{bad, good}, event.Event{Source: event.SourceClaude})
-
-	if !bad.called || !good.called {
-		t.Error("并非所有渠道都被调用")
+	if skipped == "" {
+		t.Error("应报告跳过原因")
 	}
-	if len(results) != 2 {
-		t.Fatalf("结果数 = %d, 期望 2", len(results))
-	}
-	if results[0].Err == nil || results[1].Err != nil {
-		t.Errorf("结果 = %+v, 期望仅第一个失败", results)
+	if hit {
+		t.Error("被拦截的事件仍发出了 HTTP 请求")
 	}
 }
 
-func TestBuildRegistersFeishuOnlyWhenConfigured(t *testing.T) {
-	if got := Build(config.Config{}); len(got) != 0 {
-		t.Errorf("未配置 webhook 时不应有渠道，得到 %d 个", len(got))
+func TestSendReportsMissingWebhook(t *testing.T) {
+	skipped, err := Send(context.Background(), config.Config{}, event.Event{Source: event.SourceClaude})
+	if err != nil {
+		t.Fatal(err)
 	}
-	cfg := config.Config{Feishu: config.Feishu{WebhookURL: "https://example.com/hook"}}
-	if got := Build(cfg); len(got) != 1 || got[0].Name() != "feishu" {
-		t.Errorf("配置 webhook 后应注册飞书渠道，得到 %+v", got)
+	if !strings.Contains(skipped, "未配置") {
+		t.Errorf("跳过原因 = %q, 期望提示未配置", skipped)
+	}
+}
+
+func TestSendDelivers(t *testing.T) {
+	var got string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		got = string(body)
+		io.WriteString(w, `{"code":0}`)
+	}))
+	defer srv.Close()
+
+	cfg := config.Config{Feishu: config.Feishu{WebhookURL: srv.URL}}
+	ev := event.Event{Source: event.SourceClaude, Cwd: "/work/acn", Message: "改好了"}
+
+	skipped, err := Send(context.Background(), cfg, ev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if skipped != "" {
+		t.Errorf("不应跳过：%s", skipped)
+	}
+	if !strings.Contains(got, "改好了") {
+		t.Errorf("请求体未包含正文：%s", got)
+	}
+}
+
+func TestSendPropagatesFailure(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"code":19021,"msg":"sign match fail"}`)
+	}))
+	defer srv.Close()
+
+	cfg := config.Config{Feishu: config.Feishu{WebhookURL: srv.URL}}
+	if _, err := Send(context.Background(), cfg, event.Event{Source: event.SourceClaude}); err == nil {
+		t.Error("飞书业务失败应当上报")
 	}
 }

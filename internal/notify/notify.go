@@ -1,12 +1,13 @@
-// Package notify 定义通知渠道抽象与投递入口。
+// Package notify 决定一个事件该不该推、并把它推出去。
 //
-// daemon 与 hook 直发两条路径共用 Dispatch，保证「是否该推送」的判定只有一处实现。
+// 目前只有飞书一个渠道，所以这里不做渠道抽象——接口、并发派发、结果汇总
+// 都是为「多个渠道」准备的，而那个多样性并不存在。真要加第二个渠道时
+// 再引入抽象，成本远低于一直背着它。
 package notify
 
 import (
 	"context"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/windyskr/acn/internal/config"
@@ -14,46 +15,18 @@ import (
 	"github.com/windyskr/acn/internal/feishu"
 )
 
-// Build 按配置装配可用渠道。新增渠道只需在此追加一行，daemon 与 hook 无需改动。
-func Build(cfg config.Config) []Notifier {
-	var out []Notifier
-	if cfg.FeishuReady() {
-		out = append(out, feishu.New(cfg.Feishu))
-	}
-	return out
-}
-
-// Notifier 是一个通知渠道。新增渠道只需实现该接口并在 Build 中注册。
-type Notifier interface {
-	Name() string
-	Send(ctx context.Context, ev event.Event) error
-}
-
-// Result 是单个渠道的投递结果。Skipped 非空表示未发送及其原因。
-type Result struct {
-	Channel string
-	Skipped string
-	Err     error
-}
-
-func (r Result) String() string {
-	switch {
-	case r.Skipped != "":
-		return fmt.Sprintf("%s: 跳过（%s）", r.Channel, r.Skipped)
-	case r.Err != nil:
-		return fmt.Sprintf("%s: 失败（%v）", r.Channel, r.Err)
-	default:
-		return fmt.Sprintf("%s: 成功", r.Channel)
-	}
-}
+// SendTimeout 是单次投递的整体超时。
+//
+// 取值要小：hook 会阻塞 CLI 返回，飞书若卡住，用户就得在任务末尾干等这么久。
+// 正常一次往返约 80ms，3 秒已是极宽裕的上限。
+const SendTimeout = 3 * time.Second
 
 // Gate 判断该事件是否应当推送，返回的字符串为不推送的原因。
-// 与渠道无关的过滤都收敛在这里。
 func Gate(cfg config.Config, ev event.Event) string {
 	if !cfg.SourceEnabled(ev.Source) {
 		return "来源已禁用：" + ev.Source
 	}
-	// 耗时未知（如 Codex）时不套用阈值，否则会把所有通知都挡掉。
+	// 耗时未知时不套用阈值，否则会把取不到起点的通知全部挡掉。
 	if cfg.MinDurationSeconds > 0 && ev.DurationMS > 0 {
 		if ev.DurationMS < int64(cfg.MinDurationSeconds)*1000 {
 			return fmt.Sprintf("耗时 %s 低于阈值 %ds",
@@ -63,27 +36,16 @@ func Gate(cfg config.Config, ev event.Event) string {
 	return ""
 }
 
-// Dispatch 并发投递到所有已配置渠道。渠道之间互不阻塞，单个失败不影响其余。
-func Dispatch(ctx context.Context, cfg config.Config, notifiers []Notifier, ev event.Event) []Result {
+// Send 先过 Gate 再投递。skipped 非空表示按规则未发送，此时 err 为 nil。
+func Send(ctx context.Context, cfg config.Config, ev event.Event) (skipped string, err error) {
 	if reason := Gate(cfg, ev); reason != "" {
-		return []Result{{Channel: "-", Skipped: reason}}
+		return reason, nil
 	}
-	if len(notifiers) == 0 {
-		return []Result{{Channel: "-", Skipped: "未配置任何通知渠道"}}
+	if !cfg.FeishuReady() {
+		return "未配置飞书 webhook", nil
 	}
 
-	results := make([]Result, len(notifiers))
-	var wg sync.WaitGroup
-	for i, n := range notifiers {
-		wg.Add(1)
-		go func(i int, n Notifier) {
-			defer wg.Done()
-			results[i] = Result{Channel: n.Name(), Err: n.Send(ctx, ev)}
-		}(i, n)
-	}
-	wg.Wait()
-	return results
+	ctx, cancel := context.WithTimeout(ctx, SendTimeout)
+	defer cancel()
+	return "", feishu.New(cfg.Feishu).Send(ctx, ev)
 }
-
-// SendTimeout 是单次投递的整体超时。
-const SendTimeout = 10 * time.Second

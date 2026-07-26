@@ -18,9 +18,11 @@ import (
 // maxStdin 限制载荷体积，避免异常输入撑爆内存。
 const maxStdin = 1 << 20
 
-// MaxScanBytes 是 transcript 的默认扫描上限。只关心最后一轮，从尾部截取即可，
-// 避免超长会话把 hook 拖慢——hook 会阻塞 CLI 返回。
-const MaxScanBytes = 8 << 20
+// MaxScanBytes 是 transcript 的默认扫描上限。只关心最后一轮，从尾部截取即可。
+//
+// 这是 hook 端最大的一笔开销：解析 1.7MB 的 transcript 约需 45ms，而 hook 会
+// 阻塞 CLI 返回。512KB 足以覆盖最后一轮（含若干大 tool_result），再多就是白花时间。
+const MaxScanBytes = 512 << 10
 
 // StopPayload 是 Stop hook 经 stdin 传入的载荷。
 //
