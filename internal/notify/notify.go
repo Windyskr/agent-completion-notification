@@ -44,6 +44,12 @@ func Send(ctx context.Context, cfg config.Config, ev event.Event) (skipped strin
 	if !cfg.FeishuReady() {
 		return "未配置飞书 webhook", nil
 	}
+	if ev.DeviceName == "" {
+		ev.DeviceName = cfg.EffectiveDeviceName()
+	}
+	ev.AgentName = cfg.EffectiveAgentName(ev.Source)
+	ev.ShowDeviceName = cfg.ShowDeviceName
+	ev.HideProjectName = !cfg.ShowProjectName
 
 	ctx, cancel := context.WithTimeout(ctx, SendTimeout)
 	defer cancel()

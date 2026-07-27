@@ -87,7 +87,13 @@ func TestSendDelivers(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	cfg := config.Config{Feishu: config.Feishu{WebhookURL: srv.URL}}
+	cfg := config.Config{
+		Feishu:          config.Feishu{WebhookURL: srv.URL},
+		DeviceName:      "devbox",
+		ShowDeviceName:  true,
+		ShowProjectName: true,
+		AgentNames:      map[string]string{"claude": "opus"},
+	}
 	ev := event.Event{Source: event.SourceClaude, Cwd: "/work/acn", Message: "改好了"}
 
 	skipped, err := Send(context.Background(), cfg, ev)
@@ -99,6 +105,9 @@ func TestSendDelivers(t *testing.T) {
 	}
 	if !strings.Contains(got, "改好了") {
 		t.Errorf("请求体未包含正文：%s", got)
+	}
+	if !strings.Contains(got, "devbox-opus-acn 任务完成") {
+		t.Errorf("请求体未包含设备与来源标题：%s", got)
 	}
 }
 

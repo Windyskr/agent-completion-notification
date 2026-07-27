@@ -45,6 +45,11 @@ const usage = `acn (Agent Completion Notification) — AI CLI 任务完成通知
   webhook <url>          飞书自定义机器人地址
   secret <str>           飞书签名密钥（未开启签名校验则留空）
   min-duration <秒>      低于该耗时不推送，0 为不限
+  device-name <名称|auto> 通知标题中的设备名（auto 使用系统 hostname）
+  show-device-name <on|off>  标题是否显示设备名（默认 off）
+  show-project-name <on|off> 标题是否显示项目名（默认 on）
+  claude-agent-name <名称|auto> Claude Agent 名（默认 claude）
+  codex-agent-name <名称|auto>  Codex Agent 名（默认 Codex）
   claude <on|off>        是否推送 Claude Code
   codex <on|off>         是否推送 Codex
 
@@ -185,6 +190,11 @@ func cmdStatus() error {
 
 	fmt.Println("\n配置（" + config.Path() + "）：")
 	fmt.Println("  " + mark(cfg.FeishuReady()) + " 飞书 webhook：" + describeWebhook(cfg))
+	fmt.Printf("  · 标题字段：device-name=%s project-name=%s\n",
+		onOff(cfg.ShowDeviceName), onOff(cfg.ShowProjectName))
+	fmt.Println("  · 设备名称：" + cfg.EffectiveDeviceName())
+	fmt.Printf("  · Agent 名称：claude=%s codex=%s\n",
+		cfg.EffectiveAgentName(event.SourceClaude), cfg.EffectiveAgentName(event.SourceCodex))
 	if cfg.Feishu.Secret != "" {
 		fmt.Println("  · 签名校验：已启用")
 	}
@@ -218,6 +228,32 @@ func cmdConfig(args []string) error {
 			return err
 		}
 		cfg.MinDurationSeconds = n
+	case "device-name":
+		if strings.EqualFold(value, "auto") {
+			cfg.DeviceName = ""
+		} else {
+			cfg.DeviceName = value
+		}
+	case "show-device-name", "show-project-name":
+		on, err := parseBool(value)
+		if err != nil {
+			return err
+		}
+		if key == "show-device-name" {
+			cfg.ShowDeviceName = on
+		} else {
+			cfg.ShowProjectName = on
+		}
+	case "claude-agent-name", "codex-agent-name":
+		source := strings.TrimSuffix(key, "-agent-name")
+		if cfg.AgentNames == nil {
+			cfg.AgentNames = map[string]string{}
+		}
+		if strings.EqualFold(value, "auto") {
+			delete(cfg.AgentNames, source)
+		} else {
+			cfg.AgentNames[source] = value
+		}
 	case "claude", "codex":
 		on, err := parseBool(value)
 		if err != nil {
@@ -238,7 +274,8 @@ func cmdConfig(args []string) error {
 
 	// 环境变量优先级高于配置文件，静默失效会很难排查。
 	if (key == "webhook" && os.Getenv(config.EnvWebhook) != "") ||
-		(key == "secret" && os.Getenv(config.EnvSecret) != "") {
+		(key == "secret" && os.Getenv(config.EnvSecret) != "") ||
+		(key == "device-name" && os.Getenv(config.EnvDeviceName) != "") {
 		fmt.Println("注意：同名环境变量已设置，其值会覆盖此处配置")
 	}
 	return nil

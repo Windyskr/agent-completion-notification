@@ -97,11 +97,22 @@ Codex 的 hook 信任状态按哈希存在其内部，没有可靠的外部读�
 acn config webhook <url>        飞书自定义机器人地址
 acn config secret <str>         签名密钥（机器人未开启签名校验则不用配）
 acn config min-duration <秒>    低于该耗时不推送，0 为不限
+acn config device-name <名称|auto>  通知标题中的设备名（auto 恢复系统 hostname）
+acn config show-device-name <on|off>   是否显示设备名，默认 off
+acn config show-project-name <on|off>  是否显示项目名，默认 on
+acn config claude-agent-name <名称|auto>  Claude Agent 名，默认 claude
+acn config codex-agent-name <名称|auto>   Codex Agent 名，默认 Codex
 acn config claude <on|off>      是否推送 Claude Code
 acn config codex <on|off>       是否推送 Codex
 ```
 
-环境变量 `ACN_FEISHU_WEBHOOK_URL`、`ACN_FEISHU_SECRET` 优先级高于配置文件。
+通知标题默认形如 `Codex-acn 任务完成`，包含 Agent 名和项目名。开启设备名后形如
+`MacBookPro-Codex-acn 任务完成`；设备名和项目名可分别控制是否显示。
+Claude Code 的默认标题形如 `claude-acn 任务完成`。两个 Agent 名均可独立配置，
+传入 `auto` 可恢复各自的默认名称。
+
+环境变量 `ACN_FEISHU_WEBHOOK_URL`、`ACN_FEISHU_SECRET`、`ACN_DEVICE_NAME`
+优先级高于配置文件。
 `ACN_CONFIG_DIR` 可改配置目录。
 
 ### 耗时是怎么算的

@@ -14,9 +14,10 @@ import (
 )
 
 const (
-	EnvConfigDir = "ACN_CONFIG_DIR"
-	EnvWebhook   = "ACN_FEISHU_WEBHOOK_URL"
-	EnvSecret    = "ACN_FEISHU_SECRET"
+	EnvConfigDir  = "ACN_CONFIG_DIR"
+	EnvWebhook    = "ACN_FEISHU_WEBHOOK_URL"
+	EnvSecret     = "ACN_FEISHU_SECRET"
+	EnvDeviceName = "ACN_DEVICE_NAME"
 )
 
 // Feishu 是飞书自定义机器人的配置。
@@ -29,6 +30,12 @@ type Feishu struct {
 // Config 是 acn 的全部配置。
 type Config struct {
 	Feishu Feishu `json:"feishu"`
+	// DeviceName 用于通知标题；留空时取系统 hostname。
+	DeviceName      string `json:"device_name,omitempty"`
+	ShowDeviceName  bool   `json:"show_device_name"`
+	ShowProjectName bool   `json:"show_project_name"`
+	// AgentNames 按 hook 来源覆盖通知标题中的 Agent 名称。
+	AgentNames map[string]string `json:"agent_names"`
 	// Sources 控制各来源是否推送，缺省视为开启。
 	Sources map[string]bool `json:"sources"`
 	// MinDurationSeconds 低于该耗时的任务不推送。
@@ -38,7 +45,10 @@ type Config struct {
 // Default 返回未落盘时的默认配置。
 func Default() Config {
 	return Config{
-		Sources: map[string]bool{"claude": true, "codex": true},
+		ShowDeviceName:  false,
+		ShowProjectName: true,
+		AgentNames:      map[string]string{"claude": "claude", "codex": "Codex"},
+		Sources:         map[string]bool{"claude": true, "codex": true},
 	}
 }
 
@@ -107,12 +117,44 @@ func (c Config) FeishuReady() bool {
 	return strings.TrimSpace(c.Feishu.WebhookURL) != ""
 }
 
+// EffectiveDeviceName 返回通知中展示的设备名。显式配置优先，无法读取
+// hostname 时使用稳定的占位名称，确保标题始终保留设备前缀。
+func (c Config) EffectiveDeviceName() string {
+	if name := strings.TrimSpace(c.DeviceName); name != "" {
+		return name
+	}
+	if name, err := os.Hostname(); err == nil {
+		if name = strings.TrimSpace(name); name != "" {
+			return name
+		}
+	}
+	return "unknown-device"
+}
+
+// EffectiveAgentName 返回指定来源的展示名称，未配置时使用内置默认值。
+func (c Config) EffectiveAgentName(source string) string {
+	if name := strings.TrimSpace(c.AgentNames[source]); name != "" {
+		return name
+	}
+	switch source {
+	case "claude":
+		return "claude"
+	case "codex":
+		return "Codex"
+	default:
+		return strings.TrimSpace(source)
+	}
+}
+
 func (c *Config) applyEnv() {
 	if v := strings.TrimSpace(os.Getenv(EnvWebhook)); v != "" {
 		c.Feishu.WebhookURL = v
 	}
 	if v := strings.TrimSpace(os.Getenv(EnvSecret)); v != "" {
 		c.Feishu.Secret = v
+	}
+	if v := strings.TrimSpace(os.Getenv(EnvDeviceName)); v != "" {
+		c.DeviceName = v
 	}
 }
 

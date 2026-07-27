@@ -22,13 +22,33 @@ const messagePreviewRunes = 500
 
 // Event 是一次 AI CLI 任务完成。
 type Event struct {
-	Source    string `json:"source"`
-	Cwd       string `json:"cwd"`
-	Message   string `json:"message"`
-	SessionID string `json:"session_id"`
+	Source     string `json:"source"`
+	AgentName  string `json:"agent_name,omitempty"`
+	DeviceName string `json:"device_name,omitempty"`
+	// 使用 HideProjectName 是为了让 Event 零值与产品默认值一致：隐藏设备、显示项目。
+	ShowDeviceName  bool   `json:"show_device_name,omitempty"`
+	HideProjectName bool   `json:"hide_project_name,omitempty"`
+	Cwd             string `json:"cwd"`
+	Message         string `json:"message"`
+	SessionID       string `json:"session_id"`
 	// DurationMS 为 0 表示来源未提供耗时（Codex 的 notify 回调只有结束时刻，
 	// 没有本轮起点）。此时耗时阈值不参与判断。
 	DurationMS int64 `json:"duration_ms"`
+}
+
+// DisplayAgentName 返回适合放进连字符标题前缀的 Agent 名。
+func (e Event) DisplayAgentName() string {
+	if name := strings.TrimSpace(e.AgentName); name != "" {
+		return name
+	}
+	switch e.Source {
+	case SourceClaude:
+		return "claude"
+	case SourceCodex:
+		return "Codex"
+	default:
+		return strings.TrimSpace(e.Source)
+	}
 }
 
 // Project 取工作目录名作为项目名。
@@ -40,24 +60,26 @@ func (e Event) Project() string {
 	return filepath.Base(cwd)
 }
 
-// SourceLabel 返回展示用的来源名。
-func (e Event) SourceLabel() string {
-	switch e.Source {
-	case SourceClaude:
-		return "Claude Code"
-	case SourceCodex:
-		return "Codex"
-	default:
-		return e.Source
-	}
-}
-
-// Title 形如 "[Claude Code] acn 任务完成"。
+// Title 默认形如 "Codex-acn 任务完成"；设备名和项目名由显示设置控制。
 func (e Event) Title() string {
-	if p := e.Project(); p != "" {
-		return fmt.Sprintf("[%s] %s 任务完成", e.SourceLabel(), p)
+	parts := make([]string, 0, 3)
+	if e.ShowDeviceName {
+		if device := strings.TrimSpace(e.DeviceName); device != "" {
+			parts = append(parts, device)
+		}
 	}
-	return fmt.Sprintf("[%s] 任务完成", e.SourceLabel())
+	if agent := e.DisplayAgentName(); agent != "" {
+		parts = append(parts, agent)
+	}
+	if !e.HideProjectName {
+		if project := e.Project(); project != "" {
+			parts = append(parts, project)
+		}
+	}
+	if len(parts) == 0 {
+		return "任务完成"
+	}
+	return strings.Join(parts, "-") + " 任务完成"
 }
 
 // Body 组装推送正文。渠道只负责传输，不再各自拼文案。

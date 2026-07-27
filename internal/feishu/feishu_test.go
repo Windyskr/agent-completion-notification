@@ -34,7 +34,7 @@ func TestSendPostsRichText(t *testing.T) {
 	srv := serveCapture(t, `{"code":0,"msg":"success"}`, &got)
 
 	n := New(config.Feishu{WebhookURL: srv.URL})
-	ev := event.Event{Source: event.SourceClaude, Cwd: "/work/acn", Message: "改好了", DurationMS: 90_000}
+	ev := event.Event{DeviceName: "devbox", ShowDeviceName: true, Source: event.SourceClaude, Cwd: "/work/acn", Message: "改好了", DurationMS: 90_000}
 
 	if err := n.Send(context.Background(), ev); err != nil {
 		t.Fatal(err)
@@ -46,7 +46,7 @@ func TestSendPostsRichText(t *testing.T) {
 	// 标题与正文应由 Event 统一组装。
 	raw, _ := json.Marshal(got)
 	text := string(raw)
-	for _, want := range []string{"Claude Code", "acn", "1m30s", "改好了"} {
+	for _, want := range []string{"devbox-claude-acn 任务完成", "1m30s", "改好了"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("请求体缺少 %q:\n%s", want, text)
 		}
