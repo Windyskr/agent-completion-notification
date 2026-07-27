@@ -193,7 +193,7 @@ func checkCodexTrust(t install.TargetStatus) check {
 	return check{
 		"Codex 信任", levelUnknown,
 		"无法自动确认（Codex 未公开该状态）",
-		"若 Codex 侧收不到通知，在 Codex 里执行 /hooks 信任 acn",
+		"若 Codex 侧收不到通知，请在终端中运行 codex 进行信任授权（/hooks）",
 	}
 }
 

@@ -169,7 +169,7 @@ func cmdInstall(targets []string) error {
 	}
 	if st.Codex.Installed {
 		// Codex 要求用户逐条审阅并信任非托管的命令 hook，否则它不会执行。
-		fmt.Println("下一步：在 Codex 里执行 /hooks，信任 acn 的 Stop hook")
+		fmt.Println("下一步：请在终端中运行 codex 进行信任授权（/hooks）")
 	}
 	fmt.Println("提示：两个 CLI 均需重启后生效；装好后可用 acn doctor 自检")
 	return nil
