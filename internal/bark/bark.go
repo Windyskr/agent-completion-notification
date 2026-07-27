@@ -16,6 +16,12 @@ import (
 	"github.com/windyskr/agent-completion-notification/internal/event"
 )
 
+const (
+	defaultGroup  = "agent-completion-notification"
+	codexIconURL  = "https://raw.githubusercontent.com/Windyskr/agent-completion-notification/main/assets/icons/codex.png"
+	claudeIconURL = "https://raw.githubusercontent.com/Windyskr/agent-completion-notification/main/assets/icons/claude.png"
+)
+
 type Notifier struct {
 	cfg    config.Bark
 	client *http.Client
@@ -45,9 +51,13 @@ func (n *Notifier) Send(ctx context.Context, ev event.Event) error {
 	payload := struct {
 		Title string `json:"title"`
 		Body  string `json:"body"`
+		Group string `json:"group"`
+		Icon  string `json:"icon,omitempty"`
 	}{
 		Title: ev.Title(),
 		Body:  ev.Body(n.now()),
+		Group: defaultGroup,
+		Icon:  iconForSource(ev.Source),
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -79,6 +89,17 @@ func (n *Notifier) Send(ctx context.Context, ev event.Event) error {
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
 	}
 	return checkResponse(raw)
+}
+
+func iconForSource(source string) string {
+	switch source {
+	case event.SourceCodex:
+		return codexIconURL
+	case event.SourceClaude:
+		return claudeIconURL
+	default:
+		return ""
+	}
 }
 
 func checkResponse(raw []byte) error {

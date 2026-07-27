@@ -124,8 +124,10 @@ acn config codex <on|off>       是否推送 Codex
 独立配置，传入 `auto` 可恢复各自的默认名称；设置 Agent 名会自动打开 Agent 名显示。
 
 Bark URL 使用 App 复制出的设备端点并截到 key，例如 `https://api.day.app/your_key`；
-不要在其后附加 title 或 body。已配置且启用的渠道会并发发送，一个渠道失败不会阻止
-另一个渠道尝试，错误信息会注明失败渠道。
+不要在其后附加 title 或 body。Bark 通知默认发送到 `agent-completion-notification`
+分组，并根据来源使用仓库内置的 [Codex](assets/icons/codex.png) 或
+[Claude](assets/icons/claude.png) 官方图标（图标需要 iOS 15 及以上）。已配置且启用的
+渠道会并发发送，一个渠道失败不会阻止另一个渠道尝试，错误信息会注明失败渠道。
 
 设置 `device-name` 会自动打开设备名显示；设置渠道 URL 会自动打开对应渠道。需要覆盖
 自动行为时，再显式执行 `show-device-name off`、`feishu off` 或 `bark off`。

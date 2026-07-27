@@ -40,9 +40,28 @@ func TestSendPostsJSON(t *testing.T) {
 	if got["title"] != "claude-acn 任务完成" {
 		t.Errorf("title = %q", got["title"])
 	}
+	if got["group"] != "agent-completion-notification" {
+		t.Errorf("group = %q, 期望 agent-completion-notification", got["group"])
+	}
+	if got["icon"] != claudeIconURL {
+		t.Errorf("icon = %q, 期望 Claude 官方图标", got["icon"])
+	}
 	for _, want := range []string{"2026-07-27 12:00:00", "/work/acn", "改好了"} {
 		if !strings.Contains(got["body"], want) {
 			t.Errorf("body 缺少 %q: %s", want, got["body"])
+		}
+	}
+}
+
+func TestIconForSource(t *testing.T) {
+	tests := map[string]string{
+		event.SourceCodex:  "https://raw.githubusercontent.com/Windyskr/agent-completion-notification/main/assets/icons/codex.png",
+		event.SourceClaude: "https://raw.githubusercontent.com/Windyskr/agent-completion-notification/main/assets/icons/claude.png",
+		"unknown":          "",
+	}
+	for source, want := range tests {
+		if got := iconForSource(source); got != want {
+			t.Errorf("iconForSource(%q) = %q, 期望 %q", source, got, want)
 		}
 	}
 }
