@@ -82,10 +82,25 @@ func TestBodyOmitsUnknownDuration(t *testing.T) {
 
 func TestBodyIncludesKnownDuration(t *testing.T) {
 	now := time.Date(2026, 7, 26, 15, 4, 5, 0, time.UTC)
-	body := Event{Source: SourceClaude, Cwd: "/work/acn", DurationMS: 90_000}.Body(now)
+	body := Event{
+		Source: SourceClaude, Cwd: "/work/acn", Message: "任务已经完成", DurationMS: 90_000,
+	}.Body(now)
 
 	if !strings.Contains(body, "耗时：1m30s") {
 		t.Errorf("正文缺少耗时:\n%s", body)
+	}
+	want := "任务已经完成\n\n完成时间：2026-07-26 15:04:05\n耗时：1m30s\n目录：/work/acn"
+	if body != want {
+		t.Errorf("正文顺序错误:\n得到：%q\n期望：%q", body, want)
+	}
+}
+
+func TestBodyWithoutMessageStartsWithDetails(t *testing.T) {
+	now := time.Date(2026, 7, 26, 15, 4, 5, 0, time.UTC)
+	body := Event{Source: SourceClaude, Cwd: "/work/acn"}.Body(now)
+
+	if strings.HasPrefix(body, "\n") || body != "完成时间：2026-07-26 15:04:05\n目录：/work/acn" {
+		t.Errorf("无回复时正文格式错误：%q", body)
 	}
 }
 

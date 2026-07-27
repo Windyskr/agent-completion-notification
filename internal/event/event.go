@@ -84,17 +84,17 @@ func (e Event) Title() string {
 
 // Body 组装推送正文。渠道只负责传输，不再各自拼文案。
 func (e Event) Body(now time.Time) string {
-	lines := []string{"完成时间：" + now.Format("2006-01-02 15:04:05")}
+	details := []string{"完成时间：" + now.Format("2006-01-02 15:04:05")}
 	if d := FormatDuration(e.DurationMS); d != "" {
-		lines = append(lines, "耗时："+d)
+		details = append(details, "耗时："+d)
 	}
 	if cwd := strings.TrimSpace(e.Cwd); cwd != "" {
-		lines = append(lines, "目录："+cwd)
+		details = append(details, "目录："+cwd)
 	}
 	if msg := truncate(strings.TrimSpace(e.Message), messagePreviewRunes); msg != "" {
-		lines = append(lines, "", msg)
+		return msg + "\n\n" + strings.Join(details, "\n")
 	}
-	return strings.Join(lines, "\n")
+	return strings.Join(details, "\n")
 }
 
 // FormatDuration 把毫秒格式化为人读的耗时；未知耗时返回空串。
