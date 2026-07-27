@@ -17,9 +17,10 @@ const claudeHookTimeout = 10
 
 // hookEntry 是一条具体的 hook 命令。
 type hookEntry struct {
-	Type    string `json:"type"`
-	Command string `json:"command"`
-	Timeout int    `json:"timeout,omitempty"`
+	Type    string   `json:"type"`
+	Command string   `json:"command"`
+	Args    []string `json:"args,omitempty"`
+	Timeout int      `json:"timeout,omitempty"`
 }
 
 // hookGroup 是 settings.json 中 hooks.<Event> 数组的一项。
@@ -42,13 +43,16 @@ func installClaude(exe string) error {
 	return editClaudeSettings(func(groups []json.RawMessage) ([]json.RawMessage, error) {
 		// 先摘掉旧的 acn 条目再追加，重复安装才不会堆积。
 		kept, _ := stripACNGroups(groups)
-		entry := hookGroup{
-			Hooks: []hookEntry{{
-				Type:    "command",
-				Command: hookCommand(exe, "claude"),
-				Timeout: claudeHookTimeout,
-			}},
+		hook := hookEntry{Type: "command", Timeout: claudeHookTimeout}
+		if isWindowsPath(exe) {
+			// Claude Code 的 exec form 会直接 CreateProcess，不经过 Git Bash 或
+			// PowerShell，因此路径含空格时也不需要任何 shell 引号。
+			hook.Command = exe
+			hook.Args = []string{"hook", "claude"}
+		} else {
+			hook.Command = hookCommand(exe, "claude")
 		}
+		entry := hookGroup{Hooks: []hookEntry{hook}}
 		raw, err := json.Marshal(entry)
 		if err != nil {
 			return nil, err
@@ -96,7 +100,10 @@ func recordedExe(groups []json.RawMessage) string {
 			continue
 		}
 		for _, h := range g.Hooks {
-			if isACNCommand(h.Command) {
+			if isACNHook(h) {
+				if isACNExecForm(h) {
+					return h.Command
+				}
 				return extractExe(h.Command, "claude")
 			}
 		}
@@ -195,7 +202,7 @@ func stripACNGroups(groups []json.RawMessage) ([]json.RawMessage, bool) {
 		remaining := make([]hookEntry, 0, len(g.Hooks))
 		hit := false
 		for _, h := range g.Hooks {
-			if isACNCommand(h.Command) {
+			if isACNHook(h) {
 				hit = true
 				continue
 			}
@@ -221,6 +228,19 @@ func stripACNGroups(groups []json.RawMessage) ([]json.RawMessage, bool) {
 // 因此命令串必然同时含有可执行名与子命令。
 func isACNCommand(cmd string) bool {
 	return strings.Contains(cmd, "acn") && strings.Contains(cmd, "hook claude")
+}
+
+func isACNHook(h hookEntry) bool {
+	return isACNExecForm(h) || isACNCommand(h.Command)
+}
+
+func isACNExecForm(h hookEntry) bool {
+	if len(h.Args) != 2 || h.Args[0] != "hook" || h.Args[1] != "claude" {
+		return false
+	}
+	command := strings.ReplaceAll(strings.TrimSpace(h.Command), `\`, "/")
+	name := strings.ToLower(filepath.Base(command))
+	return name == "acn" || name == "acn.exe"
 }
 
 // readJSONObject 读取 JSON 对象；文件不存在时返回空对象，让首次安装能直接创建。

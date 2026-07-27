@@ -8,10 +8,13 @@
 package install
 
 import (
+	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
+	"unicode/utf16"
 
 	"github.com/windyskr/agent-completion-notification/internal/config"
 )
@@ -147,19 +150,60 @@ func backup(path string) error {
 	return os.WriteFile(path+".acn.bak", data, 0o600)
 }
 
-// shellQuote 以单引号包裹路径，供写入 shell 命令串（两边的 hook 都是 shell 命令）。
+// shellQuote 以单引号包裹路径，供 macOS/Linux 的 shell 命令使用。
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // hookCommand 渲染写入对方配置的命令串。
 func hookCommand(exe, source string) string {
+	if isWindowsPath(exe) {
+		// Codex 会按当前会话选择 cmd.exe 或 PowerShell。安全路径直接执行，
+		// 两种 shell 都能识别；复杂路径则用无引号歧义的 EncodedCommand。
+		if windowsBareCommandSafe(exe) {
+			return exe + " hook " + source
+		}
+		return powershellHookCommand(exe, source)
+	}
 	return shellQuote(exe) + " hook " + source
+}
+
+func windowsBareCommandSafe(path string) bool {
+	for _, r := range path {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || strings.ContainsRune(`:\/._-`, r) {
+			continue
+		}
+		return false
+	}
+	return path != ""
+}
+
+const powershellEncodedPrefix = "powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand "
+
+func powershellHookCommand(exe, source string) string {
+	quoted := strings.ReplaceAll(exe, "'", "''")
+	script := "& '" + quoted + "' hook " + source + "; exit $LASTEXITCODE"
+	words := utf16.Encode([]rune(script))
+	data := make([]byte, len(words)*2)
+	for i, word := range words {
+		data[i*2] = byte(word)
+		data[i*2+1] = byte(word >> 8)
+	}
+	return powershellEncodedPrefix + base64.StdEncoding.EncodeToString(data)
+}
+
+// isWindowsPath 依据绝对路径本身判断平台。这样交叉编译与配置迁移时不依赖
+// 当前测试进程的 GOOS；Executable 返回的真实 Windows 路径必有盘符或 UNC 前缀。
+func isWindowsPath(path string) bool {
+	return (len(path) >= 2 && path[1] == ':') || strings.HasPrefix(path, `\\`)
 }
 
 // extractExe 从命令串里还原出 acn 路径，即 hookCommand 的逆操作。
 // 认不出来时返回空串。
 func extractExe(command, source string) string {
+	if strings.HasPrefix(command, powershellEncodedPrefix) {
+		return extractPowerShellExe(strings.TrimPrefix(command, powershellEncodedPrefix), source)
+	}
 	quoted, ok := strings.CutSuffix(command, " hook "+source)
 	if !ok {
 		return ""
@@ -167,7 +211,29 @@ func extractExe(command, source string) string {
 	if len(quoted) >= 2 && quoted[0] == '\'' && quoted[len(quoted)-1] == '\'' {
 		return strings.ReplaceAll(quoted[1:len(quoted)-1], `'\''`, "'")
 	}
+	if len(quoted) >= 2 && quoted[0] == '"' && quoted[len(quoted)-1] == '"' {
+		return quoted[1 : len(quoted)-1]
+	}
 	return quoted
+}
+
+func extractPowerShellExe(encoded, source string) string {
+	data, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encoded))
+	if err != nil || len(data)%2 != 0 {
+		return ""
+	}
+	words := make([]uint16, len(data)/2)
+	for i := range words {
+		words[i] = uint16(data[i*2]) | uint16(data[i*2+1])<<8
+	}
+	script := string(utf16.Decode(words))
+	prefix := "& '"
+	suffix := "' hook " + source + "; exit $LASTEXITCODE"
+	if !strings.HasPrefix(script, prefix) || !strings.HasSuffix(script, suffix) {
+		return ""
+	}
+	quoted := strings.TrimSuffix(strings.TrimPrefix(script, prefix), suffix)
+	return strings.ReplaceAll(quoted, "''", "'")
 }
 
 // writeFileAtomicPreservingMode 原子写回用户既有文件，并沿用它原本的权限位。

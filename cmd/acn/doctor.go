@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 
 	"github.com/windyskr/agent-completion-notification/internal/config"
@@ -154,7 +155,13 @@ func checkTarget(t install.TargetStatus) check {
 		c.hint = "acn install（重写为当前路径）"
 		return c
 	}
-	if info.Mode().Perm()&0o111 == 0 {
+	if info.IsDir() {
+		c.level = levelFail
+		c.detail = "记录的 acn 路径是目录而非可执行文件：" + t.Exe
+		c.hint = "acn install（重写为当前路径）"
+		return c
+	}
+	if runtime.GOOS != "windows" && info.Mode().Perm()&0o111 == 0 {
 		c.level = levelFail
 		c.detail = "记录的 acn 没有执行权限：" + t.Exe
 		c.hint = "chmod +x " + t.Exe

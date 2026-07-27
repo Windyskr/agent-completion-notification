@@ -20,9 +20,38 @@ hook 是个短命进程：解析载荷、并发请求已配置渠道、退出。
 
 ## 安装
 
+### macOS
+
 ```bash
 brew install windyskr/tap/acn
 # 或：go install github.com/windyskr/agent-completion-notification/cmd/acn@latest
+```
+
+### Windows
+
+Windows 11 / PowerShell 7 可直接通过 Go 安装：
+
+```powershell
+go install github.com/windyskr/agent-completion-notification/cmd/acn@latest
+
+# 若 GOPATH\bin 尚未加入 PATH，可在当前终端先这样调用
+$acn = Join-Path (go env GOPATH) 'bin\acn.exe'
+& $acn version
+```
+
+希望直接在后续终端使用 `acn` 时，把 `go env GOPATH` 下的 `bin` 目录加入用户
+`PATH`。也可以从源码构建一个独立的 Windows 可执行文件：
+
+```powershell
+go build -ldflags '-s -w' -o .\bin\acn.exe .\cmd\acn
+```
+
+### 接入与配置
+
+macOS/Linux 直接使用 `acn`；Windows 若尚未配置 `PATH`，将下面命令中的 `acn`
+替换为 `& $acn`：
+
+```text
 
 # 至少配置一个通知渠道，也可以两个都配
 acn config feishu-url https://open.feishu.cn/open-apis/bot/v2/hook/xxxx
@@ -37,6 +66,10 @@ acn doctor                          # 自检 + 实际推送一条
 | --- | --- |
 | `~/.claude/settings.json` | 增加一个 `Stop` hook |
 | `~/.codex/config.toml` | 追加一个 `[[hooks.Stop]]` 块（哨兵注释界定） |
+
+Windows 上的 `~` 对应 `%USERPROFILE%`。安装器会把 `.exe` 的绝对路径写进 hook；
+Claude Code 使用不经过 shell 的 exec form；Codex 的命令同时兼容 cmd 与
+PowerShell，安装目录或用户名含空格也能正常启动。
 
 之后还需两步：
 
@@ -151,6 +184,12 @@ Bark URL 使用 App 复制出的设备端点并截到 key，例如 `https://api.
 ```bash
 make test     # go vet + go test -race
 make build    # 产出 ./bin/acn
+```
+
+Windows 本机构建使用：
+
+```powershell
+go build -ldflags '-s -w' -o .\bin\acn.exe .\cmd\acn
 ```
 
 Homebrew Formula 只存在于 tap 仓库 [windyskr/homebrew-tap](https://github.com/Windyskr/homebrew-tap)，
