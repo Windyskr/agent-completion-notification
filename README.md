@@ -24,34 +24,46 @@ hook 是个短命进程：解析载荷、并发请求已配置渠道、退出。
 
 ```bash
 brew install windyskr/tap/acn
-# 或：go install github.com/windyskr/agent-completion-notification/cmd/acn@latest
 ```
+
+Apple Silicon Mac 默认安装预编译 bottle，不需要在本机安装 Go。其他 macOS 架构仍可
+通过源码安装。
 
 ### Windows
 
-Windows 11 / PowerShell 7 可直接通过 Go 安装：
+推荐使用 Scoop 安装预编译二进制：
+
+```powershell
+scoop bucket add windyskr https://github.com/Windyskr/scoop-bucket
+scoop install windyskr/acn
+```
+
+也可以使用仓库提供的 PowerShell 安装脚本。脚本会自动选择 x64/ARM64 版本、校验
+SHA-256、安装到用户目录并加入用户 `PATH`：
+
+```powershell
+$installer = Join-Path $env:TEMP 'install-acn.ps1'
+Invoke-WebRequest https://raw.githubusercontent.com/Windyskr/agent-completion-notification/main/install.ps1 -OutFile $installer
+& $installer
+```
+
+不想使用包管理器时，也可以从
+[GitHub Releases](https://github.com/Windyskr/agent-completion-notification/releases)
+下载对应的 Windows ZIP，解压后把目录加入 `PATH`。
+
+`go install` 只作为已有 Go 工具链的开发者安装方式：
 
 ```powershell
 go install github.com/windyskr/agent-completion-notification/cmd/acn@latest
-
-# 若 GOPATH\bin 尚未加入 PATH，可在当前终端先这样调用
-$acn = Join-Path (go env GOPATH) 'bin\acn.exe'
-& $acn version
 ```
 
-希望直接在后续终端使用 `acn` 时，把 `go env GOPATH` 下的 `bin` 目录加入用户
-`PATH`。也可以从源码构建一个独立的 Windows 可执行文件：
-
-```powershell
-go build -ldflags '-s -w' -o .\bin\acn.exe .\cmd\acn
-```
+Scoop 或 PowerShell 脚本安装后，升级分别使用 `scoop update acn` 或重新运行安装脚本。
 
 ### 接入与配置
 
-macOS/Linux 直接使用 `acn`；Windows 若尚未配置 `PATH`，将下面命令中的 `acn`
-替换为 `& $acn`：
+安装完成后，运行：
 
-```text
+```shell
 
 # 至少配置一个通知渠道，也可以两个都配
 acn config feishu-url https://open.feishu.cn/open-apis/bot/v2/hook/xxxx

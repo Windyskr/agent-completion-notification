@@ -1,0 +1,67 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Build release archives
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          mkdir -p dist staging
+
+          for target in \
+            windows/amd64 windows/arm64 \
+            darwin/arm64
+          do
+            goos="${target%/*}"
+            goarch="${target#*/}"
+            package="acn_${version}_${goos}_${goarch}"
+            package_dir="staging/${package}"
+            binary="acn"
+            if [[ "${goos}" == "windows" ]]; then
+              binary="acn.exe"
+            fi
+
+            mkdir -p "${package_dir}"
+            CGO_ENABLED=0 GOOS="${goos}" GOARCH="${goarch}" \
+              go build -trimpath \
+                -ldflags "-s -w -X main.version=${TAG}" \
+                -o "${package_dir}/${binary}" ./cmd/acn
+            cp README.md LICENSE "${package_dir}/"
+
+            if [[ "${goos}" == "windows" ]]; then
+              (cd staging && zip -q -r "../dist/${package}.zip" "${package}")
+            else
+              tar -C staging -czf "dist/${package}.tar.gz" "${package}"
+            fi
+          done
+
+          (cd dist && sha256sum acn_* > checksums.txt)
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: gh release create "${TAG}" dist/* --generate-notes --verify-tag
