@@ -68,7 +68,7 @@ func TestSendSkipsWithoutHTTPCall(t *testing.T) {
 	}
 }
 
-func TestSendReportsMissingWebhook(t *testing.T) {
+func TestSendReportsMissingChannel(t *testing.T) {
 	skipped, err := Send(context.Background(), config.Config{}, event.Event{Source: event.SourceClaude})
 	if err != nil {
 		t.Fatal(err)
@@ -78,17 +78,24 @@ func TestSendReportsMissingWebhook(t *testing.T) {
 	}
 }
 
-func TestSendDelivers(t *testing.T) {
-	var got string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func TestSendDeliversAllConfiguredChannels(t *testing.T) {
+	var feishuBody, barkBody string
+	feishuSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
-		got = string(body)
+		feishuBody = string(body)
 		io.WriteString(w, `{"code":0}`)
 	}))
-	defer srv.Close()
+	defer feishuSrv.Close()
+	barkSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		barkBody = string(body)
+		io.WriteString(w, `{"code":200,"message":"success"}`)
+	}))
+	defer barkSrv.Close()
 
 	cfg := config.Config{
-		Feishu:          config.Feishu{WebhookURL: srv.URL},
+		Feishu:          config.Feishu{WebhookURL: feishuSrv.URL},
+		Bark:            config.Bark{URL: barkSrv.URL + "/device-key"},
 		DeviceName:      "devbox",
 		ShowDeviceName:  true,
 		ShowProjectName: true,
@@ -103,11 +110,58 @@ func TestSendDelivers(t *testing.T) {
 	if skipped != "" {
 		t.Errorf("不应跳过：%s", skipped)
 	}
-	if !strings.Contains(got, "改好了") {
-		t.Errorf("请求体未包含正文：%s", got)
+	for channel, body := range map[string]string{"feishu": feishuBody, "bark": barkBody} {
+		if !strings.Contains(body, "改好了") {
+			t.Errorf("%s 请求体未包含正文：%s", channel, body)
+		}
+		if !strings.Contains(body, "devbox-opus-acn 任务完成") {
+			t.Errorf("%s 请求体未包含标题：%s", channel, body)
+		}
 	}
-	if !strings.Contains(got, "devbox-opus-acn 任务完成") {
-		t.Errorf("请求体未包含设备与来源标题：%s", got)
+}
+
+func TestSendAttemptsOtherChannelAfterFailure(t *testing.T) {
+	feishuSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"code":19021,"msg":"sign match fail"}`)
+	}))
+	defer feishuSrv.Close()
+	var barkHit bool
+	barkSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		barkHit = true
+		io.WriteString(w, `{"code":200,"message":"success"}`)
+	}))
+	defer barkSrv.Close()
+
+	cfg := config.Config{
+		Feishu: config.Feishu{WebhookURL: feishuSrv.URL},
+		Bark:   config.Bark{URL: barkSrv.URL},
+	}
+	_, err := Send(context.Background(), cfg, event.Event{Source: event.SourceClaude})
+	if err == nil || !strings.Contains(err.Error(), "feishu") {
+		t.Errorf("应报告飞书失败并标注渠道，得到 %v", err)
+	}
+	if !barkHit {
+		t.Error("飞书失败后 Bark 仍应被调用")
+	}
+}
+
+func TestSendSkipsDisabledChannel(t *testing.T) {
+	var barkHit bool
+	barkSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		barkHit = true
+		io.WriteString(w, `{"code":200}`)
+	}))
+	defer barkSrv.Close()
+
+	cfg := config.Default()
+	cfg.Bark.URL = barkSrv.URL
+	cfg.Channels["bark"] = false
+	skipped, err := Send(context.Background(), cfg, event.Event{Source: event.SourceClaude})
+	if err != nil || skipped == "" {
+		t.Errorf("禁用唯一渠道后应跳过，skipped=%q err=%v", skipped, err)
+	}
+	if barkHit {
+		t.Error("已禁用 Bark 仍发出了请求")
 	}
 }
 

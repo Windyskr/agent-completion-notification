@@ -1,15 +1,14 @@
-// Package notify 决定一个事件该不该推、并把它推出去。
-//
-// 目前只有飞书一个渠道，所以这里不做渠道抽象——接口、并发派发、结果汇总
-// 都是为「多个渠道」准备的，而那个多样性并不存在。真要加第二个渠道时
-// 再引入抽象，成本远低于一直背着它。
+// Package notify 决定一个事件该不该推，并并发投递到所有已启用渠道。
 package notify
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"sync"
 	"time"
 
+	"github.com/windyskr/agent-completion-notification/internal/bark"
 	"github.com/windyskr/agent-completion-notification/internal/config"
 	"github.com/windyskr/agent-completion-notification/internal/event"
 	"github.com/windyskr/agent-completion-notification/internal/feishu"
@@ -17,9 +16,15 @@ import (
 
 // SendTimeout 是单次投递的整体超时。
 //
-// 取值要小：hook 会阻塞 CLI 返回，飞书若卡住，用户就得在任务末尾干等这么久。
-// 正常一次往返约 80ms，3 秒已是极宽裕的上限。
+// 取值要小：hook 会阻塞 CLI 返回，任一渠道若卡住，用户就得在任务末尾等待。
+// 正常请求在百毫秒量级，3 秒已是宽裕的上限。
 const SendTimeout = 3 * time.Second
+
+// Notifier 是通知渠道的最小契约。文案由 event 统一生成，渠道只负责协议转换与传输。
+type Notifier interface {
+	Name() string
+	Send(context.Context, event.Event) error
+}
 
 // Gate 判断该事件是否应当推送，返回的字符串为不推送的原因。
 func Gate(cfg config.Config, ev event.Event) string {
@@ -41,8 +46,9 @@ func Send(ctx context.Context, cfg config.Config, ev event.Event) (skipped strin
 	if reason := Gate(cfg, ev); reason != "" {
 		return reason, nil
 	}
-	if !cfg.FeishuReady() {
-		return "未配置飞书 webhook", nil
+	notifiers := configuredNotifiers(cfg)
+	if len(notifiers) == 0 {
+		return "未配置已启用的通知渠道", nil
 	}
 	if ev.DeviceName == "" {
 		ev.DeviceName = cfg.EffectiveDeviceName()
@@ -53,5 +59,29 @@ func Send(ctx context.Context, cfg config.Config, ev event.Event) (skipped strin
 
 	ctx, cancel := context.WithTimeout(ctx, SendTimeout)
 	defer cancel()
-	return "", feishu.New(cfg.Feishu).Send(ctx, ev)
+
+	errs := make([]error, len(notifiers))
+	var wg sync.WaitGroup
+	for i, notifier := range notifiers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if sendErr := notifier.Send(ctx, ev); sendErr != nil {
+				errs[i] = fmt.Errorf("%s: %w", notifier.Name(), sendErr)
+			}
+		}()
+	}
+	wg.Wait()
+	return "", errors.Join(errs...)
+}
+
+func configuredNotifiers(cfg config.Config) []Notifier {
+	var notifiers []Notifier
+	if cfg.ChannelEnabled(config.ChannelFeishu) && cfg.FeishuReady() {
+		notifiers = append(notifiers, feishu.New(cfg.Feishu))
+	}
+	if cfg.ChannelEnabled(config.ChannelBark) && cfg.BarkReady() {
+		notifiers = append(notifiers, bark.New(cfg.Bark))
+	}
+	return notifiers
 }

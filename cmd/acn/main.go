@@ -13,6 +13,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 
@@ -25,7 +26,7 @@ import (
 // version 由构建时通过 -ldflags "-X main.version=..." 注入。
 var version = "dev"
 
-const usage = `acn (Agent Completion Notification) — AI CLI 任务完成通知
+const usage = `acn (Agent Completion Notification) — Agent 任务完成通知
 
 用法：
   acn install [目标]     接入 AI CLI（写入其配置，自动备份）
@@ -42,10 +43,13 @@ const usage = `acn (Agent Completion Notification) — AI CLI 任务完成通知
   codex                  仅 Codex
 
 配置项（acn config）：
-  webhook <url>          飞书自定义机器人地址
-  secret <str>           飞书签名密钥（未开启签名校验则留空）
+  feishu-url <url|off>   配置并启用飞书；off 仅关闭渠道
+  feishu-secret <str|off> 飞书签名密钥（未开启则留空）
+  bark-url <url|off>     配置并启用 Bark；off 仅关闭渠道
+  feishu <on|off>        是否启用飞书渠道
+  bark <on|off>          是否启用 Bark 渠道
   min-duration <秒>      低于该耗时不推送，0 为不限
-  device-name <名称|auto> 通知标题中的设备名（auto 使用系统 hostname）
+  device-name <名称|auto> 设置并显示设备名（auto 使用系统 hostname）
   show-device-name <on|off>  标题是否显示设备名（默认 off）
   show-project-name <on|off> 标题是否显示项目名（默认 on）
   claude-agent-name <名称|auto> Claude Agent 名（默认 claude）
@@ -54,7 +58,8 @@ const usage = `acn (Agent Completion Notification) — AI CLI 任务完成通知
   codex <on|off>         是否推送 Codex
 
 快速开始：
-  acn config webhook https://open.feishu.cn/open-apis/bot/v2/hook/xxxx
+  acn config feishu-url https://open.feishu.cn/open-apis/bot/v2/hook/xxxx
+  # 或：acn config bark-url https://api.day.app/your_key
   acn install
   acn doctor
 `
@@ -156,8 +161,10 @@ func cmdInstall(targets []string) error {
 
 	cfg, _ := config.Load()
 	fmt.Println()
-	if !cfg.FeishuReady() {
-		fmt.Println("下一步：acn config webhook <飞书机器人地址>")
+	if !cfg.DeliveryReady() {
+		fmt.Println("下一步：配置至少一个通知渠道")
+		fmt.Println("  飞书：acn config feishu-url <机器人地址>")
+		fmt.Println("  Bark：acn config bark-url https://api.day.app/<key>")
 	}
 	if st.Codex.Installed {
 		// Codex 要求用户逐条审阅并信任非托管的命令 hook，否则它不会执行。
@@ -189,7 +196,10 @@ func cmdStatus() error {
 	printTarget(st.Codex)
 
 	fmt.Println("\n配置（" + config.Path() + "）：")
-	fmt.Println("  " + mark(cfg.FeishuReady()) + " 飞书 webhook：" + describeWebhook(cfg))
+	fmt.Println("  " + mark(cfg.ChannelEnabled(config.ChannelFeishu) && cfg.FeishuReady()) + " 飞书 webhook：" + describeWebhook(cfg))
+	fmt.Println("  " + mark(cfg.ChannelEnabled(config.ChannelBark) && cfg.BarkReady()) + " Bark endpoint：" + describeBark(cfg))
+	fmt.Printf("  · 渠道开关：feishu=%s bark=%s\n",
+		onOff(cfg.ChannelEnabled(config.ChannelFeishu)), onOff(cfg.ChannelEnabled(config.ChannelBark)))
 	fmt.Printf("  · 标题字段：device-name=%s project-name=%s\n",
 		onOff(cfg.ShowDeviceName), onOff(cfg.ShowProjectName))
 	fmt.Println("  · 设备名称：" + cfg.EffectiveDeviceName())
@@ -218,10 +228,32 @@ func cmdConfig(args []string) error {
 
 	key, value := args[0], strings.TrimSpace(args[1])
 	switch key {
-	case "webhook":
-		cfg.Feishu.WebhookURL = value
-	case "secret":
-		cfg.Feishu.Secret = value
+	case "feishu-url":
+		if strings.EqualFold(value, "off") {
+			cfg.SetChannelEnabled(config.ChannelFeishu, false)
+		} else {
+			cfg.Feishu.WebhookURL = value
+			cfg.SetChannelEnabled(config.ChannelFeishu, true)
+		}
+	case "feishu-secret":
+		if strings.EqualFold(value, "off") {
+			cfg.Feishu.Secret = ""
+		} else {
+			cfg.Feishu.Secret = value
+		}
+	case "bark-url":
+		if strings.EqualFold(value, "off") {
+			cfg.SetChannelEnabled(config.ChannelBark, false)
+		} else {
+			cfg.Bark.URL = value
+			cfg.SetChannelEnabled(config.ChannelBark, true)
+		}
+	case "feishu", "bark":
+		on, err := parseBool(value)
+		if err != nil {
+			return err
+		}
+		cfg.SetChannelEnabled(key, on)
 	case "min-duration":
 		n, err := parseSeconds(value)
 		if err != nil {
@@ -234,6 +266,7 @@ func cmdConfig(args []string) error {
 		} else {
 			cfg.DeviceName = value
 		}
+		cfg.ShowDeviceName = true
 	case "show-device-name", "show-project-name":
 		on, err := parseBool(value)
 		if err != nil {
@@ -273,9 +306,10 @@ func cmdConfig(args []string) error {
 	fmt.Printf("已更新 %s\n", key)
 
 	// 环境变量优先级高于配置文件，静默失效会很难排查。
-	if (key == "webhook" && os.Getenv(config.EnvWebhook) != "") ||
-		(key == "secret" && os.Getenv(config.EnvSecret) != "") ||
-		(key == "device-name" && os.Getenv(config.EnvDeviceName) != "") {
+	if (key == "feishu-url" && os.Getenv(config.EnvWebhook) != "") ||
+		(key == "feishu-secret" && os.Getenv(config.EnvSecret) != "") ||
+		(key == "device-name" && os.Getenv(config.EnvDeviceName) != "") ||
+		(key == "bark-url" && os.Getenv(config.EnvBarkURL) != "") {
 		fmt.Println("注意：同名环境变量已设置，其值会覆盖此处配置")
 	}
 	return nil
@@ -295,17 +329,30 @@ func describeWebhook(cfg config.Config) string {
 	return maskURL(cfg.Feishu.WebhookURL)
 }
 
-// maskURL 隐藏 webhook 末段的 token——status 的输出常被贴进聊天记录。
+func describeBark(cfg config.Config) string {
+	if !cfg.BarkReady() {
+		return "未配置"
+	}
+	return maskURL(cfg.Bark.URL)
+}
+
+// maskURL 隐藏通知端点末段的 token——status 的输出常被贴进聊天记录。
 func maskURL(u string) string {
-	idx := strings.LastIndex(u, "/")
-	if idx < 0 || idx == len(u)-1 {
-		return u
+	parsed, err := url.Parse(strings.TrimSpace(u))
+	if err != nil || parsed.Host == "" {
+		return "已配置（地址格式异常）"
 	}
-	token := u[idx+1:]
-	if len(token) <= 8 {
-		return u[:idx+1] + "****"
+	path := strings.TrimRight(parsed.EscapedPath(), "/")
+	idx := strings.LastIndex(path, "/")
+	if idx < 0 || idx == len(path)-1 {
+		return parsed.Scheme + "://" + parsed.Host + path
 	}
-	return u[:idx+1] + token[:4] + "…" + token[len(token)-4:]
+	token := path[idx+1:]
+	masked := "****"
+	if len(token) > 8 {
+		masked = token[:4] + "…" + token[len(token)-4:]
+	}
+	return parsed.Scheme + "://" + parsed.Host + path[:idx+1] + masked
 }
 
 func parseSeconds(v string) (int, error) {

@@ -20,6 +20,9 @@ func TestDefaultTitleVisibility(t *testing.T) {
 	if got := cfg.EffectiveAgentName("codex"); got != "Codex" {
 		t.Errorf("Codex 默认 Agent 名 = %q", got)
 	}
+	if !cfg.ChannelEnabled("feishu") || !cfg.ChannelEnabled("bark") {
+		t.Error("通知渠道默认应开启")
+	}
 }
 
 func TestEffectiveAgentNameUsesConfiguredValue(t *testing.T) {
@@ -56,6 +59,34 @@ func TestLoadAppliesDeviceNameEnvironment(t *testing.T) {
 	}
 }
 
+func TestLoadAppliesBarkEnvironment(t *testing.T) {
+	t.Setenv(EnvConfigDir, t.TempDir())
+	t.Setenv(EnvBarkURL, "https://api.day.app/env-key")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Bark.URL; got != "https://api.day.app/env-key" {
+		t.Errorf("Bark URL = %q, 环境变量应优先", got)
+	}
+}
+
+func TestDeliveryReadyRequiresConfiguredEnabledChannel(t *testing.T) {
+	cfg := Default()
+	if cfg.DeliveryReady() {
+		t.Error("未配置渠道时不应可投递")
+	}
+	cfg.Bark.URL = "https://api.day.app/key"
+	if !cfg.DeliveryReady() {
+		t.Error("已配置 Bark 时应可投递")
+	}
+	cfg.Channels["bark"] = false
+	if cfg.DeliveryReady() {
+		t.Error("Bark 已禁用时不应可投递")
+	}
+}
+
 func TestLoadAppliesTitleDefaultsToLegacyConfig(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv(EnvConfigDir, dir)
@@ -74,5 +105,8 @@ func TestLoadAppliesTitleDefaultsToLegacyConfig(t *testing.T) {
 	}
 	if got := cfg.EffectiveAgentName("claude"); got != "claude" {
 		t.Errorf("旧配置的 Claude Agent 名 = %q", got)
+	}
+	if !cfg.ChannelEnabled("feishu") || !cfg.ChannelEnabled("bark") {
+		t.Error("旧配置应默认启用通知渠道")
 	}
 }

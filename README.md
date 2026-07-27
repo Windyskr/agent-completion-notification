@@ -1,7 +1,7 @@
 # acn
 
-**Agent Completion Notification** —— AI CLI 任务完成通知。
-Claude Code / Codex 跑完一轮，推送到飞书。
+**acn (Agent Completion Notification) — Agent 任务完成通知**
+Claude Code / Codex 跑完一轮，推送到飞书或 Bark。
 
 单个 Go 二进制，零依赖，无界面，无常驻进程。
 
@@ -10,13 +10,13 @@ Claude Code / Codex 跑完一轮，推送到飞书。
 两个 CLI 都原生支持 `Stop` 生命周期 hook，且**载荷 schema 几乎一致**，acn 只是接上它们：
 
 ```
-Claude Code ──Stop hook──┐
-                         ├─→ acn hook ─→ 飞书
-Codex ───────Stop hook───┘
+Claude Code ──Stop hook──┐                 ┌─→ 飞书
+                         ├─→ acn hook ─────┤
+Codex ───────Stop hook───┘                 └─→ Bark
 ```
 
-hook 是个短命进程：解析载荷、发一次 HTTP、退出。全程约 120ms，其中约 80ms
-是飞书服务端的处理时间。没有 daemon，没有 socket，没有要管的服务。
+hook 是个短命进程：解析载荷、并发请求已配置渠道、退出。通常在百毫秒量级，
+最慢不超过统一的 3 秒超时。没有 daemon，没有 socket，没有要管的服务。
 
 ## 安装
 
@@ -24,7 +24,9 @@ hook 是个短命进程：解析载荷、发一次 HTTP、退出。全程约 120
 brew install windyskr/tap/acn
 # 或：go install github.com/windyskr/agent-completion-notification/cmd/acn@latest
 
-acn config webhook https://open.feishu.cn/open-apis/bot/v2/hook/xxxx
+# 至少配置一个通知渠道，也可以两个都配
+acn config feishu-url https://open.feishu.cn/open-apis/bot/v2/hook/xxxx
+acn config bark-url https://api.day.app/your_key
 acn install
 acn doctor                          # 自检 + 实际推送一条
 ```
@@ -77,7 +79,8 @@ acn config <k> <v>             修改配置
 ? Codex 信任     无法自动确认（Codex 未公开该状态）
     → 若 Codex 侧收不到通知，在 Codex 里执行 /hooks 信任 acn
 ✓ 飞书 webhook   https://open.feishu.cn/…/xxxx…xxxx
-✓ 实际推送       已发出，请确认飞书是否收到
+? Bark endpoint  未配置（可选）
+✓ 实际推送       已发出，请确认已配置渠道是否收到
 ```
 
 其中最要紧的是**路径核对**：hook 里写的是绝对路径，二进制换了位置（重装到别处、
@@ -94,10 +97,13 @@ Codex 的 hook 信任状态按哈希存在其内部，没有可靠的外部读�
 配置在 `~/.acn/config.json`（权限 0600），改完即时生效。
 
 ```
-acn config webhook <url>        飞书自定义机器人地址
-acn config secret <str>         签名密钥（机器人未开启签名校验则不用配）
+acn config feishu-url <url|off> 配置并启用飞书，off 仅关闭渠道
+acn config feishu-secret <str|off> 签名密钥，off 清除配置
+acn config bark-url <url|off>   配置并启用 Bark，off 仅关闭渠道
+acn config feishu <on|off>      是否启用飞书渠道
+acn config bark <on|off>        是否启用 Bark 渠道
 acn config min-duration <秒>    低于该耗时不推送，0 为不限
-acn config device-name <名称|auto>  通知标题中的设备名（auto 恢复系统 hostname）
+acn config device-name <名称|auto>  设置并显示设备名（auto 使用系统 hostname）
 acn config show-device-name <on|off>   是否显示设备名，默认 off
 acn config show-project-name <on|off>  是否显示项目名，默认 on
 acn config claude-agent-name <名称|auto>  Claude Agent 名，默认 claude
@@ -111,7 +117,14 @@ acn config codex <on|off>       是否推送 Codex
 Claude Code 的默认标题形如 `claude-acn 任务完成`。两个 Agent 名均可独立配置，
 传入 `auto` 可恢复各自的默认名称。
 
-环境变量 `ACN_FEISHU_WEBHOOK_URL`、`ACN_FEISHU_SECRET`、`ACN_DEVICE_NAME`
+Bark URL 使用 App 复制出的设备端点并截到 key，例如 `https://api.day.app/your_key`；
+不要在其后附加 title 或 body。已配置且启用的渠道会并发发送，一个渠道失败不会阻止
+另一个渠道尝试，错误信息会注明失败渠道。
+
+设置 `device-name` 会自动打开设备名显示；设置渠道 URL 会自动打开对应渠道。需要覆盖
+自动行为时，再显式执行 `show-device-name off`、`feishu off` 或 `bark off`。
+
+环境变量 `ACN_FEISHU_WEBHOOK_URL`、`ACN_FEISHU_SECRET`、`ACN_BARK_URL`、`ACN_DEVICE_NAME`
 优先级高于配置文件。
 `ACN_CONFIG_DIR` 可改配置目录。
 

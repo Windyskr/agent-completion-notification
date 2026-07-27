@@ -26,4 +26,4 @@ Follow the existing Conventional Commit pattern: `feat: ...`, `fix: ...`, `refac
 
 ## Security & Hook Constraints
 
-Never commit Feishu webhook URLs or signing secrets. Use `ACN_FEISHU_WEBHOOK_URL`, `ACN_FEISHU_SECRET`, `ACN_DEVICE_NAME`, or a local `~/.acn/config.json`. The `acn hook` path must never write to stdout: Codex interprets hook output as control data. Send all diagnostics to stderr and keep notification failures from interrupting the parent CLI workflow.
+Never commit Feishu webhook URLs, signing secrets, or Bark device endpoints. Use `ACN_FEISHU_WEBHOOK_URL`, `ACN_FEISHU_SECRET`, `ACN_BARK_URL`, `ACN_DEVICE_NAME`, or a local `~/.acn/config.json`. The `acn hook` path must never write to stdout: Codex interprets hook output as control data. Send all diagnostics to stderr and keep notification failures from interrupting the parent CLI workflow.

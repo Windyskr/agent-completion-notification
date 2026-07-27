@@ -1,7 +1,7 @@
 // Package config 负责 acn 的配置读写与路径解析。
 //
 // 配置只有一个文件：$ACN_CONFIG_DIR（默认 ~/.acn）下的 config.json。
-// 敏感字段（webhook 地址、签名密钥）支持环境变量覆盖，便于 CI 与临时排查。
+// 敏感字段（通知端点、签名密钥）支持环境变量覆盖，便于 CI 与临时排查。
 package config
 
 import (
@@ -18,6 +18,10 @@ const (
 	EnvWebhook    = "ACN_FEISHU_WEBHOOK_URL"
 	EnvSecret     = "ACN_FEISHU_SECRET"
 	EnvDeviceName = "ACN_DEVICE_NAME"
+	EnvBarkURL    = "ACN_BARK_URL"
+
+	ChannelFeishu = "feishu"
+	ChannelBark   = "bark"
 )
 
 // Feishu 是飞书自定义机器人的配置。
@@ -27,15 +31,24 @@ type Feishu struct {
 	Secret string `json:"secret,omitempty"`
 }
 
+// Bark 是 Bark App 提供的设备推送端点配置。
+type Bark struct {
+	// URL 形如 https://api.day.app/<device-key>，也支持自托管服务。
+	URL string `json:"url,omitempty"`
+}
+
 // Config 是 acn 的全部配置。
 type Config struct {
 	Feishu Feishu `json:"feishu"`
+	Bark   Bark   `json:"bark"`
 	// DeviceName 用于通知标题；留空时取系统 hostname。
 	DeviceName      string `json:"device_name,omitempty"`
 	ShowDeviceName  bool   `json:"show_device_name"`
 	ShowProjectName bool   `json:"show_project_name"`
 	// AgentNames 按 hook 来源覆盖通知标题中的 Agent 名称。
 	AgentNames map[string]string `json:"agent_names"`
+	// Channels 控制各通知渠道是否启用，缺省视为开启。
+	Channels map[string]bool `json:"channels"`
 	// Sources 控制各来源是否推送，缺省视为开启。
 	Sources map[string]bool `json:"sources"`
 	// MinDurationSeconds 低于该耗时的任务不推送。
@@ -48,6 +61,7 @@ func Default() Config {
 		ShowDeviceName:  false,
 		ShowProjectName: true,
 		AgentNames:      map[string]string{"claude": "claude", "codex": "Codex"},
+		Channels:        map[string]bool{ChannelFeishu: true, ChannelBark: true},
 		Sources:         map[string]bool{"claude": true, "codex": true},
 	}
 }
@@ -112,9 +126,37 @@ func (c Config) SourceEnabled(source string) bool {
 	return !ok || enabled
 }
 
+// ChannelEnabled 判断渠道是否开启，旧配置未显式包含渠道时视为开启。
+func (c Config) ChannelEnabled(channel string) bool {
+	if c.Channels == nil {
+		return true
+	}
+	enabled, ok := c.Channels[channel]
+	return !ok || enabled
+}
+
+// SetChannelEnabled 显式设置渠道开关。
+func (c *Config) SetChannelEnabled(channel string, enabled bool) {
+	if c.Channels == nil {
+		c.Channels = map[string]bool{}
+	}
+	c.Channels[channel] = enabled
+}
+
 // FeishuReady 判断飞书渠道是否已具备推送条件。
 func (c Config) FeishuReady() bool {
 	return strings.TrimSpace(c.Feishu.WebhookURL) != ""
+}
+
+// BarkReady 判断 Bark 是否已配置设备端点。
+func (c Config) BarkReady() bool {
+	return strings.TrimSpace(c.Bark.URL) != ""
+}
+
+// DeliveryReady 判断是否至少有一个已启用且配置完整的通知渠道。
+func (c Config) DeliveryReady() bool {
+	return (c.ChannelEnabled(ChannelFeishu) && c.FeishuReady()) ||
+		(c.ChannelEnabled(ChannelBark) && c.BarkReady())
 }
 
 // EffectiveDeviceName 返回通知中展示的设备名。显式配置优先，无法读取
@@ -155,6 +197,9 @@ func (c *Config) applyEnv() {
 	}
 	if v := strings.TrimSpace(os.Getenv(EnvDeviceName)); v != "" {
 		c.DeviceName = v
+	}
+	if v := strings.TrimSpace(os.Getenv(EnvBarkURL)); v != "" {
+		c.Bark.URL = v
 	}
 }
 

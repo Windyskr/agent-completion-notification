@@ -59,7 +59,8 @@ func cmdDoctor() error {
 		checkTarget(st.Claude),
 		checkTarget(st.Codex),
 		checkCodexTrust(st.Codex),
-		checkWebhook(cfg),
+		checkFeishu(cfg),
+		checkBark(cfg),
 	}
 	checks = append(checks, checkDelivery(cfg))
 
@@ -146,12 +147,14 @@ func checkTarget(t install.TargetStatus) check {
 		c.hint = "acn install（重写为当前路径）"
 		return c
 	}
-	if info, err := os.Stat(t.Exe); err != nil {
+	info, err := os.Stat(t.Exe)
+	if err != nil {
 		c.level = levelFail
 		c.detail = "记录的 acn 路径已失效：" + t.Exe
 		c.hint = "acn install（重写为当前路径）"
 		return c
-	} else if info.Mode().Perm()&0o111 == 0 {
+	}
+	if info.Mode().Perm()&0o111 == 0 {
 		c.level = levelFail
 		c.detail = "记录的 acn 没有执行权限：" + t.Exe
 		c.hint = "chmod +x " + t.Exe
@@ -161,10 +164,13 @@ func checkTarget(t install.TargetStatus) check {
 	c.level = levelOK
 	c.detail = "hook 已安装 → " + t.Exe
 	if cur, err := install.Executable(); err == nil && cur != t.Exe {
-		// 不算错：两个路径可能都能跑。但版本可能不一致，值得说一声。
-		c.level = levelWarn
-		c.detail = fmt.Sprintf("hook 指向 %s，与当前运行的 %s 不同", t.Exe, cur)
-		c.hint = "acn install（统一为当前路径）"
+		curInfo, statErr := os.Stat(cur)
+		if statErr != nil || !os.SameFile(info, curInfo) {
+			// 不算错：两个路径可能都能跑。但版本可能不一致，值得说一声。
+			c.level = levelWarn
+			c.detail = fmt.Sprintf("hook 指向 %s，与当前运行的 %s 不同", t.Exe, cur)
+			c.hint = "acn install（统一为当前路径）"
+		}
 	}
 	return c
 }
@@ -184,9 +190,12 @@ func checkCodexTrust(t install.TargetStatus) check {
 	}
 }
 
-func checkWebhook(cfg config.Config) check {
+func checkFeishu(cfg config.Config) check {
+	if !cfg.ChannelEnabled(config.ChannelFeishu) {
+		return check{"飞书 webhook", levelUnknown, "已禁用", ""}
+	}
 	if !cfg.FeishuReady() {
-		return check{"飞书 webhook", levelFail, "未配置", "acn config webhook <地址>"}
+		return check{"飞书 webhook", levelUnknown, "未配置（可选）", ""}
 	}
 	detail := maskURL(cfg.Feishu.WebhookURL)
 	if cfg.Feishu.Secret != "" {
@@ -195,10 +204,23 @@ func checkWebhook(cfg config.Config) check {
 	return check{"飞书 webhook", levelOK, detail, ""}
 }
 
+func checkBark(cfg config.Config) check {
+	if !cfg.ChannelEnabled(config.ChannelBark) {
+		return check{"Bark endpoint", levelUnknown, "已禁用", ""}
+	}
+	if !cfg.BarkReady() {
+		return check{"Bark endpoint", levelUnknown, "未配置（可选）", ""}
+	}
+	return check{"Bark endpoint", levelOK, maskURL(cfg.Bark.URL), ""}
+}
+
 // checkDelivery 真的推一条，走与 hook 完全相同的路径。
 func checkDelivery(cfg config.Config) check {
-	if !cfg.FeishuReady() {
-		return check{"实际推送", levelUnknown, "跳过（未配置 webhook）", ""}
+	if !cfg.DeliveryReady() {
+		return check{
+			"实际推送", levelFail, "跳过（未配置已启用的通知渠道）",
+			"配置 Feishu URL 或 Bark endpoint",
+		}
 	}
 
 	cwd, _ := os.Getwd()
@@ -212,9 +234,9 @@ func checkDelivery(cfg config.Config) check {
 	skipped, err := notify.Send(context.Background(), cfg, ev)
 	switch {
 	case err != nil:
-		return check{"实际推送", levelFail, err.Error(), "检查 webhook 地址与网络"}
+		return check{"实际推送", levelFail, err.Error(), "检查通知渠道地址与网络"}
 	case skipped != "":
 		return check{"实际推送", levelWarn, "未推送（" + skipped + "）", ""}
 	}
-	return check{"实际推送", levelOK, "已发出，请确认飞书是否收到", ""}
+	return check{"实际推送", levelOK, "已发出，请确认已配置渠道是否收到", ""}
 }
