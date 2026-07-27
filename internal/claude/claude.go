@@ -20,6 +20,7 @@ type transcriptRow struct {
 	IsSidechain bool            `json:"isSidechain"`
 	Timestamp   string          `json:"timestamp"`
 	Cwd         string          `json:"cwd"`
+	AITitle     string          `json:"aiTitle"`
 	Message     json.RawMessage `json:"message"`
 }
 
@@ -49,6 +50,7 @@ func FromPayload(p hook.StopPayload) event.Event {
 		return ev
 	}
 	ev.Message = d.reply
+	ev.SessionName = d.sessionName
 	if ev.Cwd == "" {
 		ev.Cwd = d.cwd
 	}
@@ -61,10 +63,11 @@ func FromPayload(p hook.StopPayload) event.Event {
 // digest 是从 transcript 中提取的最后一轮信息。正向扫描即可取到「最后」的记录，
 // 无需反向解析。
 type digest struct {
-	reply    string
-	replyAt  time.Time
-	promptAt time.Time
-	cwd      string
+	reply       string
+	replyAt     time.Time
+	promptAt    time.Time
+	cwd         string
+	sessionName string
 }
 
 // absorb 解析一行并更新 digest。无法解析的行直接忽略。
@@ -83,6 +86,10 @@ func (d *digest) absorb(line string) {
 	ts, _ := time.Parse(time.RFC3339, row.Timestamp)
 
 	switch row.Type {
+	case "ai-title":
+		if title := strings.TrimSpace(row.AITitle); title != "" {
+			d.sessionName = title
+		}
 	case "assistant":
 		if text := extractText(row.Message); text != "" {
 			d.reply = text

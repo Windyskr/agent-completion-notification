@@ -60,8 +60,8 @@ type Config struct {
 func Default() Config {
 	return Config{
 		ShowDeviceName:  false,
-		ShowAgentName:   true,
-		ShowProjectName: true,
+		ShowAgentName:   false,
+		ShowProjectName: false,
 		AgentNames:      map[string]string{"claude": "claude", "codex": "Codex"},
 		Channels:        map[string]bool{ChannelFeishu: true, ChannelBark: true},
 		Sources:         map[string]bool{"claude": true, "codex": true},

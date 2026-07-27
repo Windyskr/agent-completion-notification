@@ -25,13 +25,14 @@ type Event struct {
 	Source     string `json:"source"`
 	AgentName  string `json:"agent_name,omitempty"`
 	DeviceName string `json:"device_name,omitempty"`
-	// Hide* 字段让 Event 零值与产品默认值一致：隐藏设备、显示 Agent 和项目。
+	// Show/Hide 字段由投递层根据配置填写，让三个可选前缀可独立控制。
 	ShowDeviceName  bool   `json:"show_device_name,omitempty"`
 	HideAgentName   bool   `json:"hide_agent_name,omitempty"`
 	HideProjectName bool   `json:"hide_project_name,omitempty"`
 	Cwd             string `json:"cwd"`
 	Message         string `json:"message"`
 	SessionID       string `json:"session_id"`
+	SessionName     string `json:"session_name,omitempty"`
 	// DurationMS 为 0 表示来源未提供耗时（Codex 的 notify 回调只有结束时刻，
 	// 没有本轮起点）。此时耗时阈值不参与判断。
 	DurationMS int64 `json:"duration_ms"`
@@ -61,9 +62,10 @@ func (e Event) Project() string {
 	return filepath.Base(cwd)
 }
 
-// Title 默认形如 "Codex-acn 任务完成"；各前缀字段由显示设置独立控制。
+// Title 默认使用会话名；设备、Agent 与项目名可按配置作为前缀。
+// 取不到会话名时使用已启用的前缀，全部为空则退回通用标题。
 func (e Event) Title() string {
-	parts := make([]string, 0, 3)
+	parts := make([]string, 0, 4)
 	if e.ShowDeviceName {
 		if device := strings.TrimSpace(e.DeviceName); device != "" {
 			parts = append(parts, device)
@@ -78,6 +80,10 @@ func (e Event) Title() string {
 		if project := e.Project(); project != "" {
 			parts = append(parts, project)
 		}
+	}
+	if session := strings.TrimSpace(e.SessionName); session != "" {
+		parts = append(parts, session)
+		return strings.Join(parts, "-")
 	}
 	if len(parts) == 0 {
 		return "任务完成"

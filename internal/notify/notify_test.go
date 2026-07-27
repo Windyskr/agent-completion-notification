@@ -2,6 +2,7 @@ package notify
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -102,7 +103,7 @@ func TestSendDeliversAllConfiguredChannels(t *testing.T) {
 		ShowProjectName: true,
 		AgentNames:      map[string]string{"claude": "opus"},
 	}
-	ev := event.Event{Source: event.SourceClaude, Cwd: "/work/acn", Message: "改好了"}
+	ev := event.Event{Source: event.SourceClaude, Cwd: "/work/acn", SessionName: "修复通知", Message: "改好了"}
 
 	skipped, err := Send(context.Background(), cfg, ev)
 	if err != nil {
@@ -115,9 +116,41 @@ func TestSendDeliversAllConfiguredChannels(t *testing.T) {
 		if !strings.Contains(body, "改好了") {
 			t.Errorf("%s 请求体未包含正文：%s", channel, body)
 		}
-		if !strings.Contains(body, "devbox-opus-acn 任务完成") {
+		if !strings.Contains(body, "devbox-opus-acn-修复通知") {
 			t.Errorf("%s 请求体未包含标题：%s", channel, body)
 		}
+	}
+}
+
+func TestSendUsesOnlySessionNameByDefault(t *testing.T) {
+	var payload struct {
+		Content struct {
+			Post map[string]struct {
+				Title string `json:"title"`
+			} `json:"post"`
+		} `json:"content"`
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Errorf("解析请求失败: %v", err)
+		}
+		io.WriteString(w, `{"code":0}`)
+	}))
+	defer srv.Close()
+
+	cfg := config.Default()
+	cfg.Feishu.WebhookURL = srv.URL
+	cfg.Channels[config.ChannelBark] = false
+	ev := event.Event{
+		Source: event.SourceCodex, Cwd: "/work/acn",
+		SessionName: "完善组件消融实验方案", Message: "完成",
+	}
+
+	if _, err := Send(context.Background(), cfg, ev); err != nil {
+		t.Fatal(err)
+	}
+	if got := payload.Content.Post["zh_cn"].Title; got != "完善组件消融实验方案" {
+		t.Errorf("默认标题 = %q, 期望只显示会话名", got)
 	}
 }
 

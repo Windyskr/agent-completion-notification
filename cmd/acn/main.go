@@ -51,8 +51,8 @@ const usage = `acn (Agent Completion Notification) — Agent 任务完成通知
   min-duration <秒>      低于该耗时不推送，0 为不限
   device-name <名称|auto> 设置并显示设备名（auto 使用系统 hostname）
   show-device-name <on|off>  标题是否显示设备名（默认 off）
-  show-agent-name <on|off>   标题是否显示 Agent 名（默认 on）
-  show-project-name <on|off> 标题是否显示项目名（默认 on）
+  show-agent-name <on|off>   标题是否显示 Agent 名（默认 off）
+  show-project-name <on|off> 标题是否显示项目名（默认 off）
   claude-agent-name <名称|auto> Claude Agent 名（默认 claude）
   codex-agent-name <名称|auto>  Codex Agent 名（默认 Codex）
   claude <on|off>        是否推送 Claude Code

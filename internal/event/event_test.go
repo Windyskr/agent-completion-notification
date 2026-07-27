@@ -20,41 +20,49 @@ func TestProject(t *testing.T) {
 }
 
 func TestTitle(t *testing.T) {
-	// 默认隐藏设备名、显示项目名。
-	ev := Event{DeviceName: "MacBookPro", Source: SourceClaude, Cwd: "/work/acn"}
-	if got, want := ev.Title(), "claude-acn 任务完成"; got != want {
+	// 产品默认关闭所有可选前缀，只显示会话名。
+	ev := Event{
+		DeviceName: "MacBookPro", Source: SourceClaude, Cwd: "/work/acn",
+		SessionName: "修复登录问题", HideAgentName: true, HideProjectName: true,
+	}
+	if got, want := ev.Title(), "修复登录问题"; got != want {
 		t.Errorf("Title = %q, 期望 %q", got, want)
 	}
-	// 显式开启设备名。
+	// 设备、Agent 与项目配置仍可作为前缀。
 	ev.ShowDeviceName = true
-	if got, want := ev.Title(), "MacBookPro-claude-acn 任务完成"; got != want {
+	ev.HideAgentName = false
+	ev.HideProjectName = false
+	if got, want := ev.Title(), "MacBookPro-claude-acn-修复登录问题"; got != want {
 		t.Errorf("Title = %q, 期望 %q", got, want)
 	}
 	// 项目名可以独立隐藏。
 	ev.HideProjectName = true
-	if got, want := ev.Title(), "MacBookPro-claude 任务完成"; got != want {
+	if got, want := ev.Title(), "MacBookPro-claude-修复登录问题"; got != want {
 		t.Errorf("Title = %q, 期望 %q", got, want)
 	}
 	// Agent 名可以独立隐藏。
 	ev.HideAgentName = true
-	if got, want := ev.Title(), "MacBookPro 任务完成"; got != want {
+	if got, want := ev.Title(), "MacBookPro-修复登录问题"; got != want {
 		t.Errorf("Title = %q, 期望 %q", got, want)
 	}
-	// 所有前缀均隐藏时回退为通用标题。
+	// 隐藏所有可选前缀后仍保留会话名。
 	ev.ShowDeviceName = false
-	if got, want := ev.Title(), "任务完成"; got != want {
+	if got, want := ev.Title(), "修复登录问题"; got != want {
 		t.Errorf("Title = %q, 期望 %q", got, want)
 	}
-	// 配置名称优先于来源默认名称。
-	if got := (Event{AgentName: "opus", Source: SourceClaude, Cwd: "/work/acn"}).Title(); got != "opus-acn 任务完成" {
+	// 配置的 Agent 名优先于来源默认名称。
+	if got := (Event{AgentName: "opus", Source: SourceClaude, Cwd: "/work/acn", SessionName: "排查构建"}).Title(); got != "opus-acn-排查构建" {
 		t.Errorf("Title = %q", got)
 	}
 	// 无 cwd 时不应出现空项目名。
-	if got := (Event{DeviceName: "workstation", ShowDeviceName: true, Source: SourceCodex}).Title(); got != "workstation-Codex 任务完成" {
+	if got := (Event{DeviceName: "workstation", ShowDeviceName: true, Source: SourceCodex, SessionName: "更新文档"}).Title(); got != "workstation-Codex-更新文档" {
 		t.Errorf("Title = %q", got)
 	}
-	// 默认设备名不参与标题。
+	// 取不到会话名时保持旧标题降级行为。
 	if got := (Event{Source: SourceCodex}).Title(); got != "Codex 任务完成" {
+		t.Errorf("Title = %q", got)
+	}
+	if got := (Event{HideAgentName: true, HideProjectName: true}).Title(); got != "任务完成" {
 		t.Errorf("Title = %q", got)
 	}
 }

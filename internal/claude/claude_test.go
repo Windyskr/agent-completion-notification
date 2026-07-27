@@ -35,11 +35,17 @@ func assistantLine(ts, text string) string {
 	return fmt.Sprintf(`{"type":"assistant","timestamp":%q,"cwd":"/work/proj","message":{"role":"assistant","content":[{"type":"text","text":%q}]}}`, ts, text)
 }
 
+func aiTitleLine(title string) string {
+	return fmt.Sprintf(`{"type":"ai-title","aiTitle":%q,"sessionId":"sess-1"}`, title)
+}
+
 func TestFromPayloadExtractsReplyAndDuration(t *testing.T) {
 	path := writeTranscript(t,
+		aiTitleLine("修复旧问题"),
 		userLine("2026-07-26T10:00:00.000Z", "帮我改个 bug"),
 		assistantLine("2026-07-26T10:00:05.000Z", "我先看看代码"),
 		toolResultLine("2026-07-26T10:00:20.000Z"),
+		aiTitleLine("修复登录问题"),
 		assistantLine("2026-07-26T10:00:30.000Z", "改好了"),
 	)
 
@@ -58,6 +64,9 @@ func TestFromPayloadExtractsReplyAndDuration(t *testing.T) {
 	}
 	if ev.SessionID != "sess-1" || ev.Cwd != "/work/proj" {
 		t.Errorf("事件字段有误: %+v", ev)
+	}
+	if ev.SessionName != "修复登录问题" {
+		t.Errorf("会话名 = %q, 期望最后一条 ai-title", ev.SessionName)
 	}
 }
 

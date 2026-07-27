@@ -10,7 +10,10 @@
 package codex
 
 import (
+	"bufio"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -40,10 +43,53 @@ func FromPayload(p hook.StopPayload, now time.Time) event.Event {
 		Message:   strings.TrimSpace(p.LastAssistantMessage),
 		SessionID: firstNonEmpty(p.SessionID, p.TurnID),
 	}
+	ev.SessionName = sessionName(ev.SessionID)
 	if started, ok := lastTaskStart(p.TranscriptPath); ok && now.After(started) {
 		ev.DurationMS = now.Sub(started).Milliseconds()
 	}
 	return ev
+}
+
+// sessionIndexRow 是 ~/.codex/session_index.jsonl 的一条会话索引记录。
+// 同一会话重命名后可能出现多条记录，因此扫描时保留最后一个匹配名称。
+type sessionIndexRow struct {
+	ID         string `json:"id"`
+	ThreadName string `json:"thread_name"`
+}
+
+func sessionName(sessionID string) string {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return ""
+	}
+
+	dir := strings.TrimSpace(os.Getenv("CODEX_HOME"))
+	if dir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return ""
+		}
+		dir = filepath.Join(home, ".codex")
+	}
+
+	f, err := os.Open(filepath.Join(dir, "session_index.jsonl"))
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+
+	var name string
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 64<<10), 1<<20)
+	for scanner.Scan() {
+		var row sessionIndexRow
+		if json.Unmarshal(scanner.Bytes(), &row) == nil && row.ID == sessionID {
+			if candidate := strings.TrimSpace(row.ThreadName); candidate != "" {
+				name = candidate
+			}
+		}
+	}
+	return name
 }
 
 // lastTaskStart 返回 rollout 中最后一条 task_started 的时间。

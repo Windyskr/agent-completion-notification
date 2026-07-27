@@ -28,8 +28,24 @@ func taskComplete(ts string) string {
 	return `{"type":"event_msg","timestamp":"` + ts + `","payload":{"type":"task_complete"}}`
 }
 
+func writeSessionIndex(t *testing.T, lines ...string) {
+	t.Helper()
+	dir := t.TempDir()
+	t.Setenv("CODEX_HOME", dir)
+	path := filepath.Join(dir, "session_index.jsonl")
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // 回复正文直接来自载荷，无需扫 transcript。
 func TestFromPayloadUsesLastAssistantMessage(t *testing.T) {
+	writeSessionIndex(t,
+		`{"id":"sess-1","thread_name":"旧名称"}`,
+		`not-json`,
+		`{"id":"other","thread_name":"其它会话"}`,
+		`{"id":"sess-1","thread_name":"完善组件消融实验方案"}`,
+	)
 	p := hook.StopPayload{
 		SessionID:            "sess-1",
 		Cwd:                  "/work/proj",
@@ -46,6 +62,16 @@ func TestFromPayloadUsesLastAssistantMessage(t *testing.T) {
 	}
 	if ev.Cwd != "/work/proj" || ev.SessionID != "sess-1" {
 		t.Errorf("事件字段有误: %+v", ev)
+	}
+	if ev.SessionName != "完善组件消融实验方案" {
+		t.Errorf("会话名 = %q, 期望最后一条匹配的索引名称", ev.SessionName)
+	}
+}
+
+func TestSessionNameDegradesWhenIndexMissing(t *testing.T) {
+	t.Setenv("CODEX_HOME", t.TempDir())
+	if got := sessionName("sess-1"); got != "" {
+		t.Errorf("缺少索引时会话名 = %q, 期望为空", got)
 	}
 }
 

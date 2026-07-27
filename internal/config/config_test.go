@@ -11,11 +11,11 @@ func TestDefaultTitleVisibility(t *testing.T) {
 	if cfg.ShowDeviceName {
 		t.Error("默认不应显示设备名")
 	}
-	if !cfg.ShowAgentName {
-		t.Error("默认应显示 Agent 名")
+	if cfg.ShowAgentName {
+		t.Error("默认不应显示 Agent 名")
 	}
-	if !cfg.ShowProjectName {
-		t.Error("默认应显示项目名")
+	if cfg.ShowProjectName {
+		t.Error("默认不应显示项目名")
 	}
 	if got := cfg.EffectiveAgentName("claude"); got != "claude" {
 		t.Errorf("Claude 默认 Agent 名 = %q", got)
@@ -102,7 +102,7 @@ func TestLoadAppliesTitleDefaultsToLegacyConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.ShowDeviceName || !cfg.ShowAgentName || !cfg.ShowProjectName {
+	if cfg.ShowDeviceName || cfg.ShowAgentName || cfg.ShowProjectName {
 		t.Errorf("旧配置的标题默认值错误: device=%v agent=%v project=%v",
 			cfg.ShowDeviceName, cfg.ShowAgentName, cfg.ShowProjectName)
 	}
@@ -111,5 +111,28 @@ func TestLoadAppliesTitleDefaultsToLegacyConfig(t *testing.T) {
 	}
 	if !cfg.ChannelEnabled("feishu") || !cfg.ChannelEnabled("bark") {
 		t.Error("旧配置应默认启用通知渠道")
+	}
+}
+
+func TestLoadPreservesExplicitTitleVisibility(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv(EnvConfigDir, dir)
+	existing := []byte(`{
+		"feishu": {},
+		"show_device_name": true,
+		"show_agent_name": true,
+		"show_project_name": true
+	}`)
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), existing, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.ShowDeviceName || !cfg.ShowAgentName || !cfg.ShowProjectName {
+		t.Errorf("已有标题配置未保留: device=%v agent=%v project=%v",
+			cfg.ShowDeviceName, cfg.ShowAgentName, cfg.ShowProjectName)
 	}
 }
