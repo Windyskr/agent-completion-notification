@@ -55,6 +55,7 @@ func Send(ctx context.Context, cfg config.Config, ev event.Event) (skipped strin
 	}
 	ev.AgentName = cfg.EffectiveAgentName(ev.Source)
 	ev.ShowDeviceName = cfg.ShowDeviceName
+	ev.HideAgentName = !cfg.ShowAgentName
 	ev.HideProjectName = !cfg.ShowProjectName
 
 	ctx, cancel := context.WithTimeout(ctx, SendTimeout)

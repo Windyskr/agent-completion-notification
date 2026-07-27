@@ -44,6 +44,7 @@ type Config struct {
 	// DeviceName 用于通知标题；留空时取系统 hostname。
 	DeviceName      string `json:"device_name,omitempty"`
 	ShowDeviceName  bool   `json:"show_device_name"`
+	ShowAgentName   bool   `json:"show_agent_name"`
 	ShowProjectName bool   `json:"show_project_name"`
 	// AgentNames 按 hook 来源覆盖通知标题中的 Agent 名称。
 	AgentNames map[string]string `json:"agent_names"`
@@ -59,6 +60,7 @@ type Config struct {
 func Default() Config {
 	return Config{
 		ShowDeviceName:  false,
+		ShowAgentName:   true,
 		ShowProjectName: true,
 		AgentNames:      map[string]string{"claude": "claude", "codex": "Codex"},
 		Channels:        map[string]bool{ChannelFeishu: true, ChannelBark: true},

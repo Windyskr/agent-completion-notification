@@ -35,6 +35,16 @@ func TestTitle(t *testing.T) {
 	if got, want := ev.Title(), "MacBookPro-claude 任务完成"; got != want {
 		t.Errorf("Title = %q, 期望 %q", got, want)
 	}
+	// Agent 名可以独立隐藏。
+	ev.HideAgentName = true
+	if got, want := ev.Title(), "MacBookPro 任务完成"; got != want {
+		t.Errorf("Title = %q, 期望 %q", got, want)
+	}
+	// 所有前缀均隐藏时回退为通用标题。
+	ev.ShowDeviceName = false
+	if got, want := ev.Title(), "任务完成"; got != want {
+		t.Errorf("Title = %q, 期望 %q", got, want)
+	}
 	// 配置名称优先于来源默认名称。
 	if got := (Event{AgentName: "opus", Source: SourceClaude, Cwd: "/work/acn"}).Title(); got != "opus-acn 任务完成" {
 		t.Errorf("Title = %q", got)

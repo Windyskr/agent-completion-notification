@@ -11,6 +11,9 @@ func TestDefaultTitleVisibility(t *testing.T) {
 	if cfg.ShowDeviceName {
 		t.Error("默认不应显示设备名")
 	}
+	if !cfg.ShowAgentName {
+		t.Error("默认应显示 Agent 名")
+	}
 	if !cfg.ShowProjectName {
 		t.Error("默认应显示项目名")
 	}
@@ -99,9 +102,9 @@ func TestLoadAppliesTitleDefaultsToLegacyConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.ShowDeviceName || !cfg.ShowProjectName {
-		t.Errorf("旧配置的标题默认值错误: device=%v project=%v",
-			cfg.ShowDeviceName, cfg.ShowProjectName)
+	if cfg.ShowDeviceName || !cfg.ShowAgentName || !cfg.ShowProjectName {
+		t.Errorf("旧配置的标题默认值错误: device=%v agent=%v project=%v",
+			cfg.ShowDeviceName, cfg.ShowAgentName, cfg.ShowProjectName)
 	}
 	if got := cfg.EffectiveAgentName("claude"); got != "claude" {
 		t.Errorf("旧配置的 Claude Agent 名 = %q", got)

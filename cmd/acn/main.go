@@ -51,6 +51,7 @@ const usage = `acn (Agent Completion Notification) — Agent 任务完成通知
   min-duration <秒>      低于该耗时不推送，0 为不限
   device-name <名称|auto> 设置并显示设备名（auto 使用系统 hostname）
   show-device-name <on|off>  标题是否显示设备名（默认 off）
+  show-agent-name <on|off>   标题是否显示 Agent 名（默认 on）
   show-project-name <on|off> 标题是否显示项目名（默认 on）
   claude-agent-name <名称|auto> Claude Agent 名（默认 claude）
   codex-agent-name <名称|auto>  Codex Agent 名（默认 Codex）
@@ -200,8 +201,8 @@ func cmdStatus() error {
 	fmt.Println("  " + mark(cfg.ChannelEnabled(config.ChannelBark) && cfg.BarkReady()) + " Bark endpoint：" + describeBark(cfg))
 	fmt.Printf("  · 渠道开关：feishu=%s bark=%s\n",
 		onOff(cfg.ChannelEnabled(config.ChannelFeishu)), onOff(cfg.ChannelEnabled(config.ChannelBark)))
-	fmt.Printf("  · 标题字段：device-name=%s project-name=%s\n",
-		onOff(cfg.ShowDeviceName), onOff(cfg.ShowProjectName))
+	fmt.Printf("  · 标题字段：device-name=%s agent-name=%s project-name=%s\n",
+		onOff(cfg.ShowDeviceName), onOff(cfg.ShowAgentName), onOff(cfg.ShowProjectName))
 	fmt.Println("  · 设备名称：" + cfg.EffectiveDeviceName())
 	fmt.Printf("  · Agent 名称：claude=%s codex=%s\n",
 		cfg.EffectiveAgentName(event.SourceClaude), cfg.EffectiveAgentName(event.SourceCodex))
@@ -267,14 +268,17 @@ func cmdConfig(args []string) error {
 			cfg.DeviceName = value
 		}
 		cfg.ShowDeviceName = true
-	case "show-device-name", "show-project-name":
+	case "show-device-name", "show-agent-name", "show-project-name":
 		on, err := parseBool(value)
 		if err != nil {
 			return err
 		}
-		if key == "show-device-name" {
+		switch key {
+		case "show-device-name":
 			cfg.ShowDeviceName = on
-		} else {
+		case "show-agent-name":
+			cfg.ShowAgentName = on
+		case "show-project-name":
 			cfg.ShowProjectName = on
 		}
 	case "claude-agent-name", "codex-agent-name":
@@ -287,6 +291,7 @@ func cmdConfig(args []string) error {
 		} else {
 			cfg.AgentNames[source] = value
 		}
+		cfg.ShowAgentName = true
 	case "claude", "codex":
 		on, err := parseBool(value)
 		if err != nil {

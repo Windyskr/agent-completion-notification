@@ -25,8 +25,9 @@ type Event struct {
 	Source     string `json:"source"`
 	AgentName  string `json:"agent_name,omitempty"`
 	DeviceName string `json:"device_name,omitempty"`
-	// 使用 HideProjectName 是为了让 Event 零值与产品默认值一致：隐藏设备、显示项目。
+	// Hide* 字段让 Event 零值与产品默认值一致：隐藏设备、显示 Agent 和项目。
 	ShowDeviceName  bool   `json:"show_device_name,omitempty"`
+	HideAgentName   bool   `json:"hide_agent_name,omitempty"`
 	HideProjectName bool   `json:"hide_project_name,omitempty"`
 	Cwd             string `json:"cwd"`
 	Message         string `json:"message"`
@@ -60,7 +61,7 @@ func (e Event) Project() string {
 	return filepath.Base(cwd)
 }
 
-// Title 默认形如 "Codex-acn 任务完成"；设备名和项目名由显示设置控制。
+// Title 默认形如 "Codex-acn 任务完成"；各前缀字段由显示设置独立控制。
 func (e Event) Title() string {
 	parts := make([]string, 0, 3)
 	if e.ShowDeviceName {
@@ -68,8 +69,10 @@ func (e Event) Title() string {
 			parts = append(parts, device)
 		}
 	}
-	if agent := e.DisplayAgentName(); agent != "" {
-		parts = append(parts, agent)
+	if !e.HideAgentName {
+		if agent := e.DisplayAgentName(); agent != "" {
+			parts = append(parts, agent)
+		}
 	}
 	if !e.HideProjectName {
 		if project := e.Project(); project != "" {

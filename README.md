@@ -105,6 +105,7 @@ acn config bark <on|off>        是否启用 Bark 渠道
 acn config min-duration <秒>    低于该耗时不推送，0 为不限
 acn config device-name <名称|auto>  设置并显示设备名（auto 使用系统 hostname）
 acn config show-device-name <on|off>   是否显示设备名，默认 off
+acn config show-agent-name <on|off>    是否显示 Agent 名，默认 on
 acn config show-project-name <on|off>  是否显示项目名，默认 on
 acn config claude-agent-name <名称|auto>  Claude Agent 名，默认 claude
 acn config codex-agent-name <名称|auto>   Codex Agent 名，默认 Codex
@@ -113,9 +114,9 @@ acn config codex <on|off>       是否推送 Codex
 ```
 
 通知标题默认形如 `Codex-acn 任务完成`，包含 Agent 名和项目名。开启设备名后形如
-`MacBookPro-Codex-acn 任务完成`；设备名和项目名可分别控制是否显示。
+`MacBookPro-Codex-acn 任务完成`；设备名、Agent 名和项目名可分别控制是否显示。
 Claude Code 的默认标题形如 `claude-acn 任务完成`。两个 Agent 名均可独立配置，
-传入 `auto` 可恢复各自的默认名称。
+传入 `auto` 可恢复各自的默认名称。设置 Agent 名会自动打开 Agent 名显示。
 
 Bark URL 使用 App 复制出的设备端点并截到 key，例如 `https://api.day.app/your_key`；
 不要在其后附加 title 或 body。已配置且启用的渠道会并发发送，一个渠道失败不会阻止

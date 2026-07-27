@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/windyskr/agent-completion-notification/internal/config"
+	"github.com/windyskr/agent-completion-notification/internal/event"
 	"github.com/windyskr/agent-completion-notification/internal/install"
 )
 
@@ -90,6 +91,32 @@ func TestCmdConfigDeviceNameEnablesDisplay(t *testing.T) {
 	}
 	if cfg.DeviceName != "mac" || !cfg.ShowDeviceName {
 		t.Errorf("device-name 未自动开启显示: name=%q show=%v", cfg.DeviceName, cfg.ShowDeviceName)
+	}
+}
+
+func TestCmdConfigAgentNameVisibility(t *testing.T) {
+	t.Setenv(config.EnvConfigDir, t.TempDir())
+	if err := cmdConfig([]string{"show-agent-name", "off"}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ShowAgentName {
+		t.Error("show-agent-name off 未关闭 Agent 名显示")
+	}
+
+	if err := cmdConfig([]string{"claude-agent-name", "opus"}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.EffectiveAgentName(event.SourceClaude) != "opus" || !cfg.ShowAgentName {
+		t.Errorf("设置 Agent 名后未自动显示: name=%q show=%v",
+			cfg.EffectiveAgentName(event.SourceClaude), cfg.ShowAgentName)
 	}
 }
 

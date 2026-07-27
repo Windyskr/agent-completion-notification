@@ -98,6 +98,7 @@ func TestSendDeliversAllConfiguredChannels(t *testing.T) {
 		Bark:            config.Bark{URL: barkSrv.URL + "/device-key"},
 		DeviceName:      "devbox",
 		ShowDeviceName:  true,
+		ShowAgentName:   true,
 		ShowProjectName: true,
 		AgentNames:      map[string]string{"claude": "opus"},
 	}
