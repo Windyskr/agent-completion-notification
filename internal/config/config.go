@@ -14,14 +14,28 @@ import (
 )
 
 const (
-	EnvConfigDir  = "ACN_CONFIG_DIR"
-	EnvWebhook    = "ACN_FEISHU_WEBHOOK_URL"
-	EnvSecret     = "ACN_FEISHU_SECRET"
-	EnvDeviceName = "ACN_DEVICE_NAME"
-	EnvBarkURL    = "ACN_BARK_URL"
+	EnvConfigDir       = "ACN_CONFIG_DIR"
+	EnvWebhook         = "ACN_FEISHU_WEBHOOK_URL"
+	EnvSecret          = "ACN_FEISHU_SECRET"
+	EnvDeviceName      = "ACN_DEVICE_NAME"
+	EnvBarkURL         = "ACN_BARK_URL"
+	EnvDingTalkWebhook = "ACN_DINGTALK_WEBHOOK_URL"
+	EnvDingTalkSecret  = "ACN_DINGTALK_SECRET"
+	EnvWeComWebhook    = "ACN_WECOM_WEBHOOK_URL"
+	EnvTelegramToken   = "ACN_TELEGRAM_BOT_TOKEN"
+	EnvTelegramChatID  = "ACN_TELEGRAM_CHAT_ID"
+	EnvEmailSMTP       = "ACN_EMAIL_SMTP"
+	EnvEmailUsername   = "ACN_EMAIL_USERNAME"
+	EnvEmailPassword   = "ACN_EMAIL_PASSWORD"
+	EnvEmailFrom       = "ACN_EMAIL_FROM"
+	EnvEmailTo         = "ACN_EMAIL_TO"
 
-	ChannelFeishu = "feishu"
-	ChannelBark   = "bark"
+	ChannelFeishu   = "feishu"
+	ChannelBark     = "bark"
+	ChannelDingTalk = "dingtalk"
+	ChannelWeCom    = "wecom"
+	ChannelTelegram = "telegram"
+	ChannelEmail    = "email"
 )
 
 // Feishu 是飞书自定义机器人的配置。
@@ -37,10 +51,40 @@ type Bark struct {
 	URL string `json:"url,omitempty"`
 }
 
+// DingTalk 是钉钉自定义机器人的配置。
+type DingTalk struct {
+	WebhookURL string `json:"webhook_url"`
+	Secret     string `json:"secret,omitempty"`
+}
+
+// WeCom 是企业微信群机器人的配置。
+type WeCom struct {
+	WebhookURL string `json:"webhook_url"`
+}
+
+// Telegram 是 Telegram Bot API 的配置。
+type Telegram struct {
+	BotToken string `json:"bot_token"`
+	ChatID   string `json:"chat_id"`
+}
+
+// Email 是 SMTP 邮件渠道的配置。
+type Email struct {
+	SMTPAddress string `json:"smtp_address"`
+	Username    string `json:"username,omitempty"`
+	Password    string `json:"password,omitempty"`
+	From        string `json:"from"`
+	To          string `json:"to"`
+}
+
 // Config 是 acn 的全部配置。
 type Config struct {
-	Feishu Feishu `json:"feishu"`
-	Bark   Bark   `json:"bark"`
+	Feishu   Feishu   `json:"feishu"`
+	Bark     Bark     `json:"bark"`
+	DingTalk DingTalk `json:"dingtalk"`
+	WeCom    WeCom    `json:"wecom"`
+	Telegram Telegram `json:"telegram"`
+	Email    Email    `json:"email"`
 	// DeviceName 用于通知标题；留空时取系统 hostname。
 	DeviceName      string `json:"device_name,omitempty"`
 	ShowDeviceName  bool   `json:"show_device_name"`
@@ -63,8 +107,11 @@ func Default() Config {
 		ShowAgentName:   false,
 		ShowProjectName: false,
 		AgentNames:      map[string]string{"claude": "claude", "codex": "Codex"},
-		Channels:        map[string]bool{ChannelFeishu: true, ChannelBark: true},
-		Sources:         map[string]bool{"claude": true, "codex": true},
+		Channels: map[string]bool{
+			ChannelFeishu: true, ChannelBark: true, ChannelDingTalk: true,
+			ChannelWeCom: true, ChannelTelegram: true, ChannelEmail: true,
+		},
+		Sources: map[string]bool{"claude": true, "codex": true},
 	}
 }
 
@@ -155,10 +202,24 @@ func (c Config) BarkReady() bool {
 	return strings.TrimSpace(c.Bark.URL) != ""
 }
 
+func (c Config) DingTalkReady() bool { return strings.TrimSpace(c.DingTalk.WebhookURL) != "" }
+func (c Config) WeComReady() bool    { return strings.TrimSpace(c.WeCom.WebhookURL) != "" }
+func (c Config) TelegramReady() bool {
+	return strings.TrimSpace(c.Telegram.BotToken) != "" && strings.TrimSpace(c.Telegram.ChatID) != ""
+}
+func (c Config) EmailReady() bool {
+	return strings.TrimSpace(c.Email.SMTPAddress) != "" &&
+		strings.TrimSpace(c.Email.From) != "" && strings.TrimSpace(c.Email.To) != ""
+}
+
 // DeliveryReady 判断是否至少有一个已启用且配置完整的通知渠道。
 func (c Config) DeliveryReady() bool {
 	return (c.ChannelEnabled(ChannelFeishu) && c.FeishuReady()) ||
-		(c.ChannelEnabled(ChannelBark) && c.BarkReady())
+		(c.ChannelEnabled(ChannelBark) && c.BarkReady()) ||
+		(c.ChannelEnabled(ChannelDingTalk) && c.DingTalkReady()) ||
+		(c.ChannelEnabled(ChannelWeCom) && c.WeComReady()) ||
+		(c.ChannelEnabled(ChannelTelegram) && c.TelegramReady()) ||
+		(c.ChannelEnabled(ChannelEmail) && c.EmailReady())
 }
 
 // EffectiveDeviceName 返回通知中展示的设备名。显式配置优先，无法读取
@@ -202,6 +263,36 @@ func (c *Config) applyEnv() {
 	}
 	if v := strings.TrimSpace(os.Getenv(EnvBarkURL)); v != "" {
 		c.Bark.URL = v
+	}
+	if v := strings.TrimSpace(os.Getenv(EnvDingTalkWebhook)); v != "" {
+		c.DingTalk.WebhookURL = v
+	}
+	if v := strings.TrimSpace(os.Getenv(EnvDingTalkSecret)); v != "" {
+		c.DingTalk.Secret = v
+	}
+	if v := strings.TrimSpace(os.Getenv(EnvWeComWebhook)); v != "" {
+		c.WeCom.WebhookURL = v
+	}
+	if v := strings.TrimSpace(os.Getenv(EnvTelegramToken)); v != "" {
+		c.Telegram.BotToken = v
+	}
+	if v := strings.TrimSpace(os.Getenv(EnvTelegramChatID)); v != "" {
+		c.Telegram.ChatID = v
+	}
+	if v := strings.TrimSpace(os.Getenv(EnvEmailSMTP)); v != "" {
+		c.Email.SMTPAddress = v
+	}
+	if v := strings.TrimSpace(os.Getenv(EnvEmailUsername)); v != "" {
+		c.Email.Username = v
+	}
+	if v := strings.TrimSpace(os.Getenv(EnvEmailPassword)); v != "" {
+		c.Email.Password = v
+	}
+	if v := strings.TrimSpace(os.Getenv(EnvEmailFrom)); v != "" {
+		c.Email.From = v
+	}
+	if v := strings.TrimSpace(os.Getenv(EnvEmailTo)); v != "" {
+		c.Email.To = v
 	}
 }
 

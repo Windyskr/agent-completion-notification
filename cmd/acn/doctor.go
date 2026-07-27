@@ -62,6 +62,10 @@ func cmdDoctor() error {
 		checkCodexTrust(st.Codex),
 		checkFeishu(cfg),
 		checkBark(cfg),
+		checkDingTalk(cfg),
+		checkWeCom(cfg),
+		checkTelegram(cfg),
+		checkEmail(cfg),
 	}
 	checks = append(checks, checkDelivery(cfg))
 
@@ -221,12 +225,56 @@ func checkBark(cfg config.Config) check {
 	return check{"Bark endpoint", levelOK, maskURL(cfg.Bark.URL), ""}
 }
 
+func checkDingTalk(cfg config.Config) check {
+	if !cfg.ChannelEnabled(config.ChannelDingTalk) {
+		return check{"钉钉 webhook", levelUnknown, "已禁用", ""}
+	}
+	if !cfg.DingTalkReady() {
+		return check{"钉钉 webhook", levelUnknown, "未配置（可选）", ""}
+	}
+	detail := maskURL(cfg.DingTalk.WebhookURL)
+	if cfg.DingTalk.Secret != "" {
+		detail += "（已启用签名校验）"
+	}
+	return check{"钉钉 webhook", levelOK, detail, ""}
+}
+
+func checkWeCom(cfg config.Config) check {
+	if !cfg.ChannelEnabled(config.ChannelWeCom) {
+		return check{"企微 webhook", levelUnknown, "已禁用", ""}
+	}
+	if !cfg.WeComReady() {
+		return check{"企微 webhook", levelUnknown, "未配置（可选）", ""}
+	}
+	return check{"企微 webhook", levelOK, maskURL(cfg.WeCom.WebhookURL), ""}
+}
+
+func checkTelegram(cfg config.Config) check {
+	if !cfg.ChannelEnabled(config.ChannelTelegram) {
+		return check{"Telegram bot", levelUnknown, "已禁用", ""}
+	}
+	if !cfg.TelegramReady() {
+		return check{"Telegram bot", levelUnknown, describeTelegram(cfg) + "（可选）", ""}
+	}
+	return check{"Telegram bot", levelOK, describeTelegram(cfg), ""}
+}
+
+func checkEmail(cfg config.Config) check {
+	if !cfg.ChannelEnabled(config.ChannelEmail) {
+		return check{"Email SMTP", levelUnknown, "已禁用", ""}
+	}
+	if !cfg.EmailReady() {
+		return check{"Email SMTP", levelUnknown, "未完整配置（可选）", ""}
+	}
+	return check{"Email SMTP", levelOK, describeEmail(cfg), ""}
+}
+
 // checkDelivery 真的推一条，走与 hook 完全相同的路径。
 func checkDelivery(cfg config.Config) check {
 	if !cfg.DeliveryReady() {
 		return check{
 			"实际推送", levelFail, "跳过（未配置已启用的通知渠道）",
-			"配置 Feishu URL 或 Bark endpoint",
+			"配置至少一个通知渠道",
 		}
 	}
 
