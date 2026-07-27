@@ -1,22 +1,10 @@
-# acn
+# acn（Agent Completion Notification）
 
-**acn (Agent Completion Notification) — Agent 任务完成通知**
-Claude Code / Codex 跑完一轮，推送到飞书或 Bark。
+推送 Agent (Claude code、Codex）完成通知到 Bark、飞书、钉钉、企微、TG等。
+原生 Stop hook 接入，单文件极小体积，一行命令即可安装，无常驻进程，无 GUI。
 
-单个 Go 二进制，零依赖，无界面，无常驻进程。
+![acn 接收 Claude Code 和 Codex 完成事件并分发到多种通知渠道](assets/acn-flow.png)
 
-## 原理
-
-两个 CLI 都原生支持 `Stop` 生命周期 hook，且**载荷 schema 几乎一致**，acn 只是接上它们：
-
-```
-Claude Code ──Stop hook──┐                 ┌─→ 飞书
-                         ├─→ acn hook ─────┤
-Codex ───────Stop hook───┘                 └─→ Bark
-```
-
-hook 是个短命进程：解析载荷、并发请求已配置渠道、退出。通常在百毫秒量级，
-最慢不超过统一的 3 秒超时。没有 daemon，没有 socket，没有要管的服务。
 
 ## 安装
 
@@ -26,19 +14,16 @@ hook 是个短命进程：解析载荷、并发请求已配置渠道、退出。
 brew install windyskr/tap/acn
 ```
 
-Apple Silicon Mac 默认安装预编译 bottle，不需要在本机安装 Go。其他 macOS 架构仍可
-通过源码安装。
-
 ### Windows
-
-推荐使用 Scoop 安装预编译二进制：
 
 ```powershell
 scoop bucket add windyskr https://github.com/Windyskr/scoop-bucket
 scoop install windyskr/acn
 ```
+<details collapsed>
+<summary>其他办法</summary>
 
-也可以使用仓库提供的 PowerShell 安装脚本。脚本会自动选择 x64/ARM64 版本、校验
+使用仓库提供的 PowerShell 安装脚本。脚本会自动选择 x64/ARM64 版本、校验
 SHA-256、安装到用户目录并加入用户 `PATH`：
 
 ```powershell
@@ -51,13 +36,13 @@ Invoke-WebRequest https://raw.githubusercontent.com/Windyskr/agent-completion-no
 [GitHub Releases](https://github.com/Windyskr/agent-completion-notification/releases)
 下载对应的 Windows ZIP，解压后把目录加入 `PATH`。
 
-`go install` 只作为已有 Go 工具链的开发者安装方式：
+`go install` 作为已有 Go 工具链的开发者安装方式：
 
 ```powershell
 go install github.com/windyskr/agent-completion-notification/cmd/acn@latest
 ```
+</details>
 
-Scoop 或 PowerShell 脚本安装后，升级分别使用 `scoop update acn` 或重新运行安装脚本。
 
 ### 接入与配置
 
@@ -65,49 +50,39 @@ Scoop 或 PowerShell 脚本安装后，升级分别使用 `scoop update acn` 或
 
 ```shell
 
-# 至少配置一个通知渠道，也可以两个都配
-acn config feishu-url https://open.feishu.cn/open-apis/bot/v2/hook/xxxx
+# 至少配置一个通知渠道，也可以同时配置多个，多个会同时推送
 acn config bark-url https://api.day.app/your_key
+acn config feishu-url https://open.feishu.cn/open-apis/bot/v2/hook/your_key
+acn config dingtalk-url https://oapi.dingtalk.com/robot/send?access_token=your_key
+acn config wecom-url https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=your_key
+# 参考下文配置其他渠道
 acn install
 acn doctor                          # 自检 + 实际推送一条
 ```
+<details collapsed>
+<summary>安装细节</summary>
 
 `acn install` 会改写这两个文件（**改写前自动备份为 `*.acn.bak`**）：
-
-| 文件 | 改动 |
-| --- | --- |
-| `~/.claude/settings.json` | 增加一个 `Stop` hook |
-| `~/.codex/config.toml` | 追加一个 `[[hooks.Stop]]` 块（哨兵注释界定） |
+| 文件                      | 改动                                           |
+| ------------------------- | ---------------------------------------------- |
+| `~/.claude/settings.json` | 增加一个 `Stop` hook                           |
+| `~/.codex/config.toml`    | 追加一个 `[[hooks.Stop]]` 块（哨兵注释界定） |
 
 Windows 上的 `~` 对应 `%USERPROFILE%`。安装器会把 `.exe` 的绝对路径写进 hook；
-Claude Code 使用不经过 shell 的 exec form；Codex 的命令同时兼容 cmd 与
-PowerShell，安装目录或用户名含空格也能正常启动。
-
+Claude Code 使用不经过 shell 的 exec form；Codex 的命令同时兼容 cmd 与 PowerShell，安装目录或用户名含空格也能正常启动。
+</details>
 之后还需两步：
 
-1. Claude Code 与 Codex **重启**后生效；
-2. 在 Codex 里执行 `/hooks`，**信任** acn 的 Stop hook——Codex 要求逐条审阅非托管的命令 hook，不信任就不会执行。
-
-## 为什么 Codex 用 hooks 而不是 notify
-
-Codex 的顶层 `notify` 是遗留路径（二进制里那个文件就叫 `legacy_notify.rs`），且**全局只有一个槽位**。抢占它意味着：
-
-- 破坏用户已有的集成（如 Codex Computer Use 就占着这个槽位），除非再实现一套「存下来 → 每次转发 → 卸载还原」的机制；
-- 即便实现了，对方下次安装仍会把 acn 静默顶掉，且没有任何报错。
-
-`[[hooks.Stop]]` 可以多个并存，互不干扰，acn 完全不用碰 `notify`。
-额外好处：hooks 的载荷带 `transcript_path`，Codex 的耗时也能算出来（取 rollout 里最后一条 `task_started`）——notify 的载荷没有起始时间，那条路做不到。
-
-**要求 Codex ≥0.129**（`hooks` 是默认开启的特性）。acn 只面向新版本，不为旧版做兼容降级。
-
-若你在 `config.toml` 里写过 `[features] hooks = false`，块虽然能写进去但永远不会触发——
-`acn status` 与 `acn doctor` 会就此发出警告。
+1. Claude Code 只需要重启，即可生效；
+2. Codex
+- 2.1 无论您是使用 Codex APP 还是 CLI，都请在 **终端** 中运行 codex 命令进行信任授权（截止 2026 年 7 月，Codex app 没有该授权功能）后。
+- 2.2 重启，即可生效。
 
 ## 命令
 
 ```
 acn install [claude|codex]     接入 AI CLI，省略目标则两个都装
-acn uninstall [claude|codex]   摘除接入
+acn uninstall [claude|codex]   移除接入
 acn status                     查看接入状态与配置
 acn doctor                     自检整条链路，并实际推送一条通知
 acn config <k> <v>             修改配置
@@ -115,7 +90,7 @@ acn config <k> <v>             修改配置
 
 ### acn doctor
 
-装好之后跑一次，它会主动核对而不只是回显配置：
+装好之后跑一次，它会主动核对配置：
 
 ```
 ✓ 二进制         /opt/homebrew/bin/acn
@@ -145,15 +120,33 @@ Codex 的 hook 信任状态按哈希存在其内部，没有可靠的外部读�
 acn config feishu-url <url|off> 配置并启用飞书，off 仅关闭渠道
 acn config feishu-secret <str|off> 签名密钥，off 清除配置
 acn config bark-url <url|off>   配置并启用 Bark，off 仅关闭渠道
+acn config dingtalk-url <url|off> 配置并启用钉钉，off 仅关闭渠道
+acn config dingtalk-secret <str|off> 钉钉加签密钥，off 清除配置
+acn config wecom-url <url|off>  配置并启用企微，off 仅关闭渠道
+acn config telegram-token <token|off> 配置并启用 Telegram，off 仅关闭渠道
+acn config telegram-chat-id <id> Telegram 用户、群组或频道 ID
+acn config email-smtp <host:port|off> SMTP 地址，off 仅关闭渠道
+acn config email-username <str> SMTP 用户名
+acn config email-password <str> SMTP 密码或授权码
+acn config email-from <address> 发件人地址
+acn config email-to <addresses> 收件人地址，多个用逗号分隔
+
+
 acn config feishu <on|off>      是否启用飞书渠道
 acn config bark <on|off>        是否启用 Bark 渠道
+acn config dingtalk <on|off>    是否启用钉钉渠道
+acn config wecom <on|off>       是否启用企微渠道
+acn config telegram <on|off>    是否启用 Telegram 渠道
+acn config email <on|off>       是否启用 Email 渠道
 acn config min-duration <秒>    低于该耗时不推送，0 为不限
-acn config device-name <名称|auto>  设置并显示设备名（auto 使用系统 hostname）
+acn config device-name <名称|auto>  设置并显示设备名（默认 auto 使用系统 hostname）
 acn config show-device-name <on|off>   是否显示设备名，默认 off
 acn config show-agent-name <on|off>    是否显示 Agent 名，默认 off
 acn config show-project-name <on|off>  是否显示项目名，默认 off
 acn config claude-agent-name <名称|auto>  Claude Agent 名，默认 claude
 acn config codex-agent-name <名称|auto>   Codex Agent 名，默认 Codex
+
+
 acn config claude <on|off>      是否推送 Claude Code
 acn config codex <on|off>       是否推送 Codex
 ```
@@ -174,22 +167,23 @@ Bark URL 使用 App 复制出的设备端点并截到 key，例如 `https://api.
 [Claude](assets/icons/claude.png) 官方图标（图标需要 iOS 15 及以上）。已配置且启用的
 渠道会并发发送，一个渠道失败不会阻止另一个渠道尝试，错误信息会注明失败渠道。
 
-设置 `device-name` 会自动打开设备名显示；设置渠道 URL 会自动打开对应渠道。需要覆盖
-自动行为时，再显式执行 `show-device-name off`、`feishu off` 或 `bark off`。
+钉钉使用自定义机器人 webhook；若机器人开启了「加签」安全设置，再配置
+`dingtalk-secret`。企微使用群机器人 webhook。Telegram 需要先通过 BotFather 创建
+Bot，再配置 bot token 和目标 `chat_id`；Bot 必须已加入目标群组或频道并具备发消息权限。
+Email 使用标准 SMTP：465 端口自动使用隐式 TLS，其他端口要求服务器支持 STARTTLS。
+建议使用邮箱服务商生成的应用专用密码或授权码，不要使用主账号密码。
 
-环境变量 `ACN_FEISHU_WEBHOOK_URL`、`ACN_FEISHU_SECRET`、`ACN_BARK_URL`、`ACN_DEVICE_NAME`
+设置 `device-name` 会自动打开设备名显示；设置渠道 URL 会自动打开对应渠道。需要覆盖
+自动行为时，再显式执行 `show-device-name off` 或对应渠道的 `<channel> off`。
+
+环境变量 `ACN_FEISHU_WEBHOOK_URL`、`ACN_FEISHU_SECRET`、`ACN_BARK_URL`、
+`ACN_DINGTALK_WEBHOOK_URL`、`ACN_DINGTALK_SECRET`、`ACN_WECOM_WEBHOOK_URL`、
+`ACN_TELEGRAM_BOT_TOKEN`、`ACN_TELEGRAM_CHAT_ID`、`ACN_EMAIL_SMTP`、
+`ACN_EMAIL_USERNAME`、`ACN_EMAIL_PASSWORD`、`ACN_EMAIL_FROM`、`ACN_EMAIL_TO`、
+`ACN_DEVICE_NAME`
 优先级高于配置文件。
 `ACN_CONFIG_DIR` 可改配置目录。
 
-### 耗时是怎么算的
-
-| 来源 | 起点 | 终点 |
-| --- | --- | --- |
-| Claude Code | transcript 里最近一条**真实用户输入**（`tool_result` 不算，否则会严重低估） | 最后一条回复 |
-| Codex | rollout 里最后一条 `task_started` | hook 触发时刻 |
-
-任一来源取不到起点时耗时按未知处理，此时 `min-duration` 不参与判断——
-否则会把该来源的通知全部挡掉。
 
 ## 开发
 
