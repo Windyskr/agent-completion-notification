@@ -208,7 +208,7 @@ func checkFeishu(cfg config.Config) check {
 	if !cfg.FeishuReady() {
 		return check{"飞书 webhook", levelUnknown, "未配置（可选）", ""}
 	}
-	detail := maskURL(cfg.Feishu.WebhookURL)
+	detail := strings.TrimSpace(cfg.Feishu.WebhookURL)
 	if cfg.Feishu.Secret != "" {
 		detail += "（已启用签名校验）"
 	}
@@ -222,7 +222,7 @@ func checkBark(cfg config.Config) check {
 	if !cfg.BarkReady() {
 		return check{"Bark endpoint", levelUnknown, "未配置（可选）", ""}
 	}
-	return check{"Bark endpoint", levelOK, maskURL(cfg.Bark.URL), ""}
+	return check{"Bark endpoint", levelOK, strings.TrimSpace(cfg.Bark.URL), ""}
 }
 
 func checkDingTalk(cfg config.Config) check {
@@ -232,7 +232,7 @@ func checkDingTalk(cfg config.Config) check {
 	if !cfg.DingTalkReady() {
 		return check{"钉钉 webhook", levelUnknown, "未配置（可选）", ""}
 	}
-	detail := maskURL(cfg.DingTalk.WebhookURL)
+	detail := strings.TrimSpace(cfg.DingTalk.WebhookURL)
 	if cfg.DingTalk.Secret != "" {
 		detail += "（已启用签名校验）"
 	}
@@ -246,7 +246,7 @@ func checkWeCom(cfg config.Config) check {
 	if !cfg.WeComReady() {
 		return check{"企微 webhook", levelUnknown, "未配置（可选）", ""}
 	}
-	return check{"企微 webhook", levelOK, maskURL(cfg.WeCom.WebhookURL), ""}
+	return check{"企微 webhook", levelOK, strings.TrimSpace(cfg.WeCom.WebhookURL), ""}
 }
 
 func checkTelegram(cfg config.Config) check {

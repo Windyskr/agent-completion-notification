@@ -13,7 +13,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"net/url"
 	"os"
 	"strings"
 
@@ -444,21 +443,21 @@ func describeWebhook(cfg config.Config) string {
 	if !cfg.FeishuReady() {
 		return "未配置"
 	}
-	return maskURL(cfg.Feishu.WebhookURL)
+	return strings.TrimSpace(cfg.Feishu.WebhookURL)
 }
 
 func describeBark(cfg config.Config) string {
 	if !cfg.BarkReady() {
 		return "未配置"
 	}
-	return maskURL(cfg.Bark.URL)
+	return strings.TrimSpace(cfg.Bark.URL)
 }
 
 func describeEndpoint(ready bool, endpoint string) string {
 	if !ready {
 		return "未配置"
 	}
-	return maskURL(endpoint)
+	return strings.TrimSpace(endpoint)
 }
 
 func describeTelegram(cfg config.Config) string {
@@ -481,25 +480,6 @@ func describeEmail(cfg config.Config) string {
 		return "未完整配置"
 	}
 	return cfg.Email.SMTPAddress + "（" + cfg.Email.From + " → " + cfg.Email.To + "）"
-}
-
-// maskURL 隐藏通知端点末段的 token——status 的输出常被贴进聊天记录。
-func maskURL(u string) string {
-	parsed, err := url.Parse(strings.TrimSpace(u))
-	if err != nil || parsed.Host == "" {
-		return "已配置（地址格式异常）"
-	}
-	path := strings.TrimRight(parsed.EscapedPath(), "/")
-	idx := strings.LastIndex(path, "/")
-	if idx < 0 || idx == len(path)-1 {
-		return parsed.Scheme + "://" + parsed.Host + path
-	}
-	token := path[idx+1:]
-	masked := "****"
-	if len(token) > 8 {
-		masked = token[:4] + "…" + token[len(token)-4:]
-	}
-	return parsed.Scheme + "://" + parsed.Host + path[:idx+1] + masked
 }
 
 func parseSeconds(v string) (int, error) {

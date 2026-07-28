@@ -11,21 +11,6 @@ import (
 	"github.com/windyskr/agent-completion-notification/internal/install"
 )
 
-func TestMaskURL(t *testing.T) {
-	tests := map[string]string{
-		"https://api.day.app/abcdefghijkl":          "https://api.day.app/abcd…ijkl",
-		"https://api.day.app/abcdefghijkl/":         "https://api.day.app/abcd…ijkl",
-		"https://api.day.app/abcdefghijkl?x=secret": "https://api.day.app/abcd…ijkl",
-		"https://api.day.app/short":                 "https://api.day.app/****",
-		"not-a-url":                                 "已配置（地址格式异常）",
-	}
-	for raw, want := range tests {
-		if got := maskURL(raw); got != want {
-			t.Errorf("maskURL(%q) = %q, 期望 %q", raw, got, want)
-		}
-	}
-}
-
 func TestCmdConfigUsesChannelPrefixedNames(t *testing.T) {
 	t.Setenv(config.EnvConfigDir, t.TempDir())
 	if err := cmdConfig([]string{"feishu", "off"}); err != nil {
