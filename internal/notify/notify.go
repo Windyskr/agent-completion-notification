@@ -61,6 +61,7 @@ func Send(ctx context.Context, cfg config.Config, ev event.Event) (skipped strin
 	ev.ShowDeviceName = cfg.ShowDeviceName
 	ev.HideAgentName = !cfg.ShowAgentName
 	ev.HideProjectName = !cfg.ShowProjectName
+	ev.SetMaxMessageLength(cfg.MaxMessageLength)
 
 	ctx, cancel := context.WithTimeout(ctx, SendTimeout)
 	defer cancel()

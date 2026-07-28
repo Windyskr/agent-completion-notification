@@ -11,6 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/windyskr/agent-completion-notification/internal/event"
 )
 
 const (
@@ -103,6 +105,8 @@ type Config struct {
 	Sources map[string]bool `json:"sources"`
 	// MinDurationSeconds 低于该耗时的任务不推送。
 	MinDurationSeconds int `json:"min_duration_seconds"`
+	// MaxMessageLength 限制通知中的回复原文字符数；0 表示不截断。
+	MaxMessageLength int `json:"max_message_length"`
 }
 
 // Default 返回未落盘时的默认配置。
@@ -115,10 +119,11 @@ func Default() Config {
 				"claude": DefaultBarkClaudeURL,
 			},
 		},
-		ShowDeviceName:  false,
-		ShowAgentName:   false,
-		ShowProjectName: false,
-		AgentNames:      map[string]string{"claude": "claude", "codex": "Codex"},
+		ShowDeviceName:   false,
+		ShowAgentName:    false,
+		ShowProjectName:  false,
+		MaxMessageLength: event.DefaultMaxMessageLength,
+		AgentNames:       map[string]string{"claude": "claude", "codex": "Codex"},
 		Channels: map[string]bool{
 			ChannelFeishu: true, ChannelBark: true, ChannelDingTalk: true,
 			ChannelWeCom: true, ChannelTelegram: true, ChannelEmail: true,

@@ -17,8 +17,10 @@ const (
 	SourceCodex  = "codex"
 )
 
-// messagePreviewRunes 限制推送正文里回复原文的长度，避免把整篇回答塞进通知。
-const messagePreviewRunes = 500
+// DefaultMaxMessageLength 是推送正文中回复原文的默认最大字符数。
+const DefaultMaxMessageLength = 1000
+
+const messagePreviewRunes = DefaultMaxMessageLength
 
 // Event 是一次 AI CLI 任务完成。
 type Event struct {
@@ -35,7 +37,13 @@ type Event struct {
 	SessionName     string `json:"session_name,omitempty"`
 	// DurationMS 为 0 表示来源未提供耗时（Codex 的 notify 回调只有结束时刻，
 	// 没有本轮起点）。此时耗时阈值不参与判断。
-	DurationMS int64 `json:"duration_ms"`
+	DurationMS       int64 `json:"duration_ms"`
+	maxMessageLength *int
+}
+
+// SetMaxMessageLength 设置回复原文的最大字符数；0 表示不截断。
+func (e *Event) SetMaxMessageLength(max int) {
+	e.maxMessageLength = &max
 }
 
 // DisplayAgentName 返回适合放进连字符标题前缀的 Agent 名。
@@ -100,7 +108,15 @@ func (e Event) Body(now time.Time) string {
 	if cwd := strings.TrimSpace(e.Cwd); cwd != "" {
 		details = append(details, "目录："+cwd)
 	}
-	if msg := truncate(strings.TrimSpace(e.Message), messagePreviewRunes); msg != "" {
+	maxMessageLength := DefaultMaxMessageLength
+	if e.maxMessageLength != nil {
+		maxMessageLength = *e.maxMessageLength
+	}
+	msg := strings.TrimSpace(e.Message)
+	if maxMessageLength > 0 {
+		msg = truncate(msg, maxMessageLength)
+	}
+	if msg != "" {
 		return msg + "\n\n" + strings.Join(details, "\n")
 	}
 	return strings.Join(details, "\n")

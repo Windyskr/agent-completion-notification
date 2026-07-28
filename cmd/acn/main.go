@@ -14,6 +14,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/windyskr/agent-completion-notification/internal/config"
@@ -62,6 +63,7 @@ const usage = `acn (Agent Completion Notification) — Agent 任务完成通知
   bark <on|off>          是否启用 Bark 渠道
   dingtalk|wecom|telegram|email <on|off> 是否启用对应渠道
   min-duration <秒>      低于该耗时不推送，0 为不限
+  max-message-length <字符数> 通知正文最大长度，默认 1000，0 为不限
   device-name <名称|default> 设置并显示设备名（default 使用系统 hostname）
   show-device-name <on|off>  标题是否显示设备名（默认 off）
   show-agent-name <on|off>   标题是否显示 Agent 名（默认 off）
@@ -242,6 +244,11 @@ func cmdStatus() error {
 	if cfg.MinDurationSeconds > 0 {
 		fmt.Printf("  · 耗时阈值：%ds\n", cfg.MinDurationSeconds)
 	}
+	if cfg.MaxMessageLength == 0 {
+		fmt.Println("  · 通知正文长度：不限")
+	} else {
+		fmt.Printf("  · 通知正文长度：%d 字符\n", cfg.MaxMessageLength)
+	}
 	fmt.Printf("  · 来源开关：claude=%s codex=%s\n",
 		onOff(cfg.SourceEnabled(event.SourceClaude)), onOff(cfg.SourceEnabled(event.SourceCodex)))
 
@@ -365,6 +372,12 @@ func cmdConfig(args []string) error {
 			return err
 		}
 		cfg.MinDurationSeconds = n
+	case "max-message-length":
+		n, err := parseNonNegativeInt(key, value)
+		if err != nil {
+			return err
+		}
+		cfg.MaxMessageLength = n
 	case "device-name":
 		if strings.EqualFold(value, "auto") {
 			return fmt.Errorf("%s 不再支持 auto，请使用 default", key)
@@ -494,6 +507,14 @@ func parseSeconds(v string) (int, error) {
 	var n int
 	if _, err := fmt.Sscanf(v, "%d", &n); err != nil || n < 0 {
 		return 0, fmt.Errorf("min-duration 需为非负整数秒，收到 %q", v)
+	}
+	return n, nil
+}
+
+func parseNonNegativeInt(key, value string) (int, error) {
+	n, err := strconv.Atoi(value)
+	if err != nil || n < 0 {
+		return 0, fmt.Errorf("%s 需为非负整数，收到 %q", key, value)
 	}
 	return n, nil
 }
