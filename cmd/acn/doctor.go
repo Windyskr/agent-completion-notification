@@ -186,19 +186,22 @@ func checkTarget(t install.TargetStatus) check {
 	return c
 }
 
-// checkCodexTrust 就 Codex 的信任要求给出提示。
-//
-// Codex 把 hook 信任按哈希存在内部状态里，没有可靠的外部读取方式，
-// 因此这里只能标为「无法确认」——不能假装检查过。
+// checkCodexTrust 核对安装器生成的 trusted_hash 是否仍与当前 hook 定义一致。
 func checkCodexTrust(t install.TargetStatus) check {
 	if !t.Installed {
 		return check{"Codex 信任", levelUnknown, "跳过（Codex 未安装）", ""}
 	}
-	return check{
-		"Codex 信任", levelUnknown,
-		"无法自动确认（Codex 未公开该状态）",
-		"若 Codex 侧收不到通知，请在终端中运行 codex 进行信任授权（/hooks）",
+	if !t.TrustKnown {
+		return check{"Codex 信任", levelUnknown, "无法确认", "acn install codex"}
 	}
+	if !t.Trusted {
+		return check{
+			"Codex 信任", levelWarn,
+			"信任哈希缺失或与当前 hook 不匹配",
+			"acn install codex（重新生成信任状态）",
+		}
+	}
+	return check{"Codex 信任", levelOK, "已信任当前 ACN hook", ""}
 }
 
 func checkFeishu(cfg config.Config) check {

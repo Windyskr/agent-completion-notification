@@ -25,6 +25,10 @@ type TargetStatus struct {
 	Path      string
 	Installed bool
 	Detail    string
+	// TrustKnown / Trusted 仅用于需要独立信任授权的集成。TrustKnown 为
+	// false 表示该目标没有这层状态，或当前无法可靠判断。
+	TrustKnown bool
+	Trusted    bool
 	// Warning 非空表示：配置写进去了，但对方运行时不会真的触发。
 	// 这类失败是无声的，必须显式说出来。
 	Warning string

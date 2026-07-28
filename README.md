@@ -56,11 +56,8 @@ acn config wecom-url https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=your_k
 acn install
 # 自检
 acn doctor                          
-# Claude Code 重启后生效
-# Codex 参考下图，在终端中运行 codex 命令，进行信任后生效 
+# 重启后生效
 ```
-![需要在 codex 中信任 hooks](assets/acn-codex-hooks-trust.jpg)
- 
 
 ## 命令
 
@@ -80,8 +77,7 @@ acn config <k> <v>             修改配置
 ✓ 二进制         /opt/homebrew/bin/acn
 ✓ Claude Code    hook 已安装 → /opt/homebrew/bin/acn
 ✓ Codex          hook 已安装 → /opt/homebrew/bin/acn
-? Codex 信任     无法自动确认（Codex 未公开该状态）
-    → 若 Codex 侧收不到通知，请在终端中运行 codex 进行信任授权（/hooks）
+✓ Codex 信任     已信任当前 ACN hook
 ✓ 飞书 webhook   https://open.feishu.cn/…/xxxx…xxxx
 ? Bark endpoint  未配置（可选）
 ✓ 实际推送       已发出，请确认已配置渠道是否收到

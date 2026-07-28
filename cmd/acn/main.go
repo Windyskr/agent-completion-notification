@@ -186,10 +186,6 @@ func cmdInstall(targets []string) error {
 		fmt.Println("  Telegram：acn config telegram-token <token> && acn config telegram-chat-id <id>")
 		fmt.Println("  Email：acn config email-smtp <host:port>（并配置账号、发件人和收件人）")
 	}
-	if st.Codex.Installed {
-		// Codex 要求用户逐条审阅并信任非托管的命令 hook，否则它不会执行。
-		fmt.Println("下一步：请在终端中运行 codex 进行信任授权（/hooks）")
-	}
 	fmt.Println("提示：两个 CLI 均需重启后生效；装好后可用 acn doctor 自检")
 	return nil
 }
