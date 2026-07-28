@@ -13,7 +13,6 @@ test:
 fmt:
 	gofmt -w .
 
-# 装到 GOBIN，便于不经 Homebrew 直接试用
 install:
 	go install -ldflags "$(LDFLAGS)" ./cmd/acn
 
