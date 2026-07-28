@@ -46,8 +46,8 @@ const usage = `acn (Agent Completion Notification) — Agent 任务完成通知
   feishu-url <url|off>   配置并启用飞书；off 仅关闭渠道
   feishu-secret <str|off> 飞书签名密钥（未开启则留空）
   bark-url <url|off>     配置并启用 Bark；off 仅关闭渠道
-  bark-codex-open-url <url|auto|off> Codex 通知点击地址
-  bark-claude-open-url <url|auto|off> Claude 通知点击地址
+  bark-codex-open-url <url|default|off> Codex 通知点击地址
+  bark-claude-open-url <url|default|off> Claude 通知点击地址
   dingtalk-url <url|off> 配置并启用钉钉机器人
   dingtalk-secret <str|off> 钉钉机器人加签密钥
   wecom-url <url|off>    配置并启用企微群机器人
@@ -62,12 +62,12 @@ const usage = `acn (Agent Completion Notification) — Agent 任务完成通知
   bark <on|off>          是否启用 Bark 渠道
   dingtalk|wecom|telegram|email <on|off> 是否启用对应渠道
   min-duration <秒>      低于该耗时不推送，0 为不限
-  device-name <名称|auto> 设置并显示设备名（auto 使用系统 hostname）
+  device-name <名称|default> 设置并显示设备名（default 使用系统 hostname）
   show-device-name <on|off>  标题是否显示设备名（默认 off）
   show-agent-name <on|off>   标题是否显示 Agent 名（默认 off）
   show-project-name <on|off> 标题是否显示项目名（默认 off）
-  claude-agent-name <名称|auto> Claude Agent 名（默认 claude）
-  codex-agent-name <名称|auto>  Codex Agent 名（默认 Codex）
+  claude-agent-name <名称|default> Claude Agent 名（默认 claude）
+  codex-agent-name <名称|default>  Codex Agent 名（默认 Codex）
   claude <on|off>        是否推送 Claude Code
   codex <on|off>         是否推送 Codex
 
@@ -285,6 +285,8 @@ func cmdConfig(args []string) error {
 		}
 		switch {
 		case strings.EqualFold(value, "auto"):
+			return fmt.Errorf("%s 不再支持 auto，请使用 default", key)
+		case strings.EqualFold(value, "default"):
 			if source == event.SourceCodex {
 				cfg.Bark.SourceURLs[source] = config.DefaultBarkCodexURL
 			} else {
@@ -358,6 +360,9 @@ func cmdConfig(args []string) error {
 		cfg.MinDurationSeconds = n
 	case "device-name":
 		if strings.EqualFold(value, "auto") {
+			return fmt.Errorf("%s 不再支持 auto，请使用 default", key)
+		}
+		if strings.EqualFold(value, "default") {
 			cfg.DeviceName = ""
 		} else {
 			cfg.DeviceName = value
@@ -382,6 +387,9 @@ func cmdConfig(args []string) error {
 			cfg.AgentNames = map[string]string{}
 		}
 		if strings.EqualFold(value, "auto") {
+			return fmt.Errorf("%s 不再支持 auto，请使用 default", key)
+		}
+		if strings.EqualFold(value, "default") {
 			delete(cfg.AgentNames, source)
 		} else {
 			cfg.AgentNames[source] = value

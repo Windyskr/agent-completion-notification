@@ -95,8 +95,8 @@ acn config <k> <v>             修改配置
 acn config feishu-url <url|off> 配置并启用飞书，off 仅关闭渠道
 acn config feishu-secret <str|off> 签名密钥，off 清除配置
 acn config bark-url <url|off>   配置并启用 Bark，off 仅关闭渠道
-acn config bark-codex-open-url <url|auto|off> Codex 点击地址，默认 chatgpt://codex
-acn config bark-claude-open-url <url|auto|off> Claude 点击地址，默认 claude://
+acn config bark-codex-open-url <url|default|off> Codex 点击地址，默认 chatgpt://codex
+acn config bark-claude-open-url <url|default|off> Claude 点击地址，默认 claude://
 acn config dingtalk-url <url|off> 配置并启用钉钉，off 仅关闭渠道
 acn config dingtalk-secret <str|off> 钉钉加签密钥，off 清除配置
 acn config wecom-url <url|off>  配置并启用企微，off 仅关闭渠道
@@ -116,12 +116,12 @@ acn config wecom <on|off>       是否启用企微渠道
 acn config telegram <on|off>    是否启用 Telegram 渠道
 acn config email <on|off>       是否启用 Email 渠道
 acn config min-duration <秒>    低于该耗时不推送，0 为不限
-acn config device-name <名称|auto>  设置并显示设备名（默认 auto 使用系统 hostname）
+acn config device-name <名称|default>  设置并显示设备名（默认使用系统 hostname）
 acn config show-device-name <on|off>   是否显示设备名，默认 off
 acn config show-agent-name <on|off>    是否显示 Agent 名，默认 off
 acn config show-project-name <on|off>  是否显示项目名，默认 off
-acn config claude-agent-name <名称|auto>  Claude Agent 名，默认 claude
-acn config codex-agent-name <名称|auto>   Codex Agent 名，默认 Codex
+acn config claude-agent-name <名称|default>  Claude Agent 名，默认 claude
+acn config codex-agent-name <名称|default>   Codex Agent 名，默认 Codex
 
 
 acn config claude <on|off>      是否推送 Claude Code
@@ -136,14 +136,14 @@ acn config codex <on|off>       是否推送 Codex
 
 设备名、Agent 名和项目名默认均不参与标题，但原有配置仍然保留。显式开启后会作为
 会话名前缀，例如 `MacBookPro-Codex-acn-完善组件消融实验方案`。两个 Agent 名均可
-独立配置，传入 `auto` 可恢复各自的默认名称；设置 Agent 名会自动打开 Agent 名显示。
+独立配置，传入 `default` 可恢复各自的默认名称；设置 Agent 名会自动打开 Agent 名显示。
 
 Bark URL 使用 App 复制出的设备端点并截到 key，例如 `https://api.day.app/your_key`；
 不要在其后附加 title 或 markdown。Bark 通知默认发送到 `agent-completion-notification`
 分组，并根据来源使用仓库内置的 [Codex](assets/icons/codex.png) 或
 [Claude](assets/icons/claude.png) 官方图标（图标需要 iOS 15 及以上）。点击 Codex
 通知会通过 `chatgpt://codex` 打开 Codex，点击 Claude 通知会通过 `claude://`
-打开 Claude。两个来源均可传入自定义地址、`auto` 恢复默认值或 `off` 单独关闭。
+打开 Claude。两个来源均可传入自定义地址、`default` 恢复默认值或 `off` 单独关闭。
 已配置且启用的
 渠道会并发发送，一个渠道失败不会阻止另一个渠道尝试，错误信息会注明失败渠道。
 
