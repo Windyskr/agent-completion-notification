@@ -33,6 +33,7 @@ const usage = `acn (Agent Completion Notification) — Agent 任务完成通知
   acn uninstall [目标]   摘除接入
   acn status             查看接入状态与配置
   acn doctor             自检整条链路，并实际推送一条通知
+  acn update [--check]   更新到最新正式版；--check 仅检查
   acn config <k> <v>     修改配置项
   acn hook claude        Claude Code 的 Stop hook 入口（读 stdin）
   acn hook codex         Codex 的 Stop hook 入口（读 stdin）
@@ -104,6 +105,8 @@ func run(args []string) error {
 		return cmdConfig(args[1:])
 	case "doctor", "test":
 		return cmdDoctor()
+	case "update":
+		return cmdUpdate(args[1:])
 	case "hook":
 		return cmdHook(args[1:])
 	case "version", "--version", "-v":

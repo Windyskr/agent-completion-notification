@@ -66,6 +66,7 @@ acn install [claude|codex]     接入 AI CLI，省略目标则两个都装
 acn uninstall [claude|codex]   移除接入
 acn status                     查看接入状态与配置
 acn doctor                     自检整条链路，并实际推送一条通知
+acn update [--check]           更新到最新正式版；--check 仅检查
 acn config <k> <v>             修改配置
 ```
 
