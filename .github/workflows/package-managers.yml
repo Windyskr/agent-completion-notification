@@ -1,0 +1,343 @@
+name: Package Managers
+
+on:
+  workflow_run:
+    workflows:
+      - Release
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to publish, for example v1.2.1
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: package-managers-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  update:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      SOURCE_REPO: Windyskr/agent-completion-notification
+      SCOOP_REPO: Windyskr/scoop-bucket
+      HOMEBREW_REPO: Windyskr/homebrew-tap
+      CROSS_REPO_TOKEN: ${{ secrets.PACKAGE_MANAGER_PAT }}
+      TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.workflow_run.head_branch }}
+
+    steps:
+      - name: Validate release and collect hashes
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${CROSS_REPO_TOKEN}" ]]; then
+            echo "::error::Repository secret PACKAGE_MANAGER_PAT is not configured"
+            exit 1
+          fi
+          if [[ ! "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Expected a stable semantic-version tag, got ${TAG}"
+            exit 1
+          fi
+
+          version="${TAG#v}"
+          release_json="$(gh release view "${TAG}" --repo "${SOURCE_REPO}" \
+            --json isDraft,isPrerelease,assets,url)"
+          if [[ "$(jq -r '.isDraft' <<<"${release_json}")" != "false" ||
+                "$(jq -r '.isPrerelease' <<<"${release_json}")" != "false" ]]; then
+            echo "::error::${TAG} is not a published stable release"
+            exit 1
+          fi
+
+          asset_hash() {
+            local name="$1"
+            local digest
+            digest="$(jq -r --arg name "${name}" \
+              '.assets[] | select(.name == $name) | .digest // empty' \
+              <<<"${release_json}")"
+            if [[ ! "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "::error::Release asset ${name} is missing a SHA-256 digest"
+              exit 1
+            fi
+            printf '%s' "${digest#sha256:}"
+          }
+
+          amd64_asset="acn_${version}_windows_amd64.zip"
+          arm64_asset="acn_${version}_windows_arm64.zip"
+          amd64_hash="$(asset_hash "${amd64_asset}")"
+          arm64_hash="$(asset_hash "${arm64_asset}")"
+
+          source_archive="${RUNNER_TEMP}/${TAG}.tar.gz"
+          curl --fail --location --silent --show-error \
+            "https://github.com/windyskr/agent-completion-notification/archive/refs/tags/${TAG}.tar.gz" \
+            --output "${source_archive}"
+          source_hash="$(sha256sum "${source_archive}" | cut -d ' ' -f 1)"
+
+          {
+            echo "version=${version}"
+            echo "amd64_hash=${amd64_hash}"
+            echo "arm64_hash=${arm64_hash}"
+            echo "source_hash=${source_hash}"
+            echo "release_url=$(jq -r '.url' <<<"${release_json}")"
+          } >>"${GITHUB_OUTPUT}"
+
+      - name: Dispatch Scoop Excavator
+        id: scoop
+        shell: bash
+        env:
+          GH_TOKEN: ${{ env.CROSS_REPO_TOKEN }}
+          VERSION: ${{ steps.release.outputs.version }}
+          AMD64_HASH: ${{ steps.release.outputs.amd64_hash }}
+          ARM64_HASH: ${{ steps.release.outputs.arm64_hash }}
+        run: |
+          set -euo pipefail
+
+          before_ids="$(gh run list --repo "${SCOOP_REPO}" \
+            --workflow Excavator --event workflow_dispatch --limit 20 \
+            --json databaseId --jq '.[].databaseId')"
+
+          gh workflow run Excavator --repo "${SCOOP_REPO}"
+
+          run_id=""
+          for _ in {1..30}; do
+            while IFS= read -r candidate; do
+              [[ -z "${candidate}" ]] && continue
+              if ! grep --fixed-strings --line-regexp --quiet \
+                "${candidate}" <<<"${before_ids}"; then
+                run_id="${candidate}"
+                break
+              fi
+            done < <(
+              gh run list --repo "${SCOOP_REPO}" \
+                --workflow Excavator --event workflow_dispatch --limit 20 \
+                --json databaseId --jq '.[].databaseId'
+            )
+            [[ -n "${run_id}" ]] && break
+            sleep 2
+          done
+
+          if [[ -z "${run_id}" ]]; then
+            echo "::error::Could not find the dispatched Scoop Excavator run"
+            exit 1
+          fi
+
+          gh run watch "${run_id}" --repo "${SCOOP_REPO}" \
+            --exit-status --interval 10
+
+          manifest="$(gh api \
+            "repos/${SCOOP_REPO}/contents/bucket/acn.json" \
+            -H "Accept: application/vnd.github.raw+json")"
+          actual_version="$(jq -r '.version' <<<"${manifest}")"
+          if [[ "${actual_version}" != "${VERSION}" ]]; then
+            echo "::error::Scoop manifest version is ${actual_version}, expected ${VERSION}"
+            exit 1
+          fi
+
+          verify_scoop_asset() {
+            local key="$1"
+            local arch="$2"
+            local expected_hash="$3"
+            local expected_url="https://github.com/Windyskr/agent-completion-notification/releases/download/${TAG}/acn_${VERSION}_windows_${arch}.zip"
+            local actual_url actual_hash
+            actual_url="$(jq -r --arg key "${key}" '.architecture[$key].url' <<<"${manifest}")"
+            actual_hash="$(jq -r --arg key "${key}" '.architecture[$key].hash' <<<"${manifest}")"
+            if [[ "${actual_url}" != "${expected_url}" ||
+                  "${actual_hash}" != "${expected_hash}" ]]; then
+              echo "::error::Scoop ${key} URL or hash does not match the release"
+              exit 1
+            fi
+          }
+
+          verify_scoop_asset "64bit" "amd64" "${AMD64_HASH}"
+          verify_scoop_asset "arm64" "arm64" "${ARM64_HASH}"
+
+          run_url="$(gh run view "${run_id}" --repo "${SCOOP_REPO}" \
+            --json url --jq '.url')"
+          {
+            echo "run_id=${run_id}"
+            echo "run_url=${run_url}"
+          } >>"${GITHUB_OUTPUT}"
+          echo "### Scoop" >>"${GITHUB_STEP_SUMMARY}"
+          echo "- Excavator: ${run_url}" >>"${GITHUB_STEP_SUMMARY}"
+          echo "- Manifest: ${VERSION}, URLs and hashes verified" >>"${GITHUB_STEP_SUMMARY}"
+
+      - name: Inspect Homebrew state
+        id: homebrew
+        shell: bash
+        env:
+          GH_TOKEN: ${{ env.CROSS_REPO_TOKEN }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          formula="$(gh api \
+            "repos/${HOMEBREW_REPO}/contents/Formula/acn.rb" \
+            -H "Accept: application/vnd.github.raw+json")"
+          expected_url="archive/refs/tags/${TAG}.tar.gz"
+          if grep --fixed-strings --quiet "${expected_url}" <<<"${formula}"; then
+            {
+              echo "mode=published"
+              echo "pr_number="
+              echo "pr_url="
+            } >>"${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          existing_pr="$(gh pr list --repo "${HOMEBREW_REPO}" --state open \
+            --limit 100 --json number,title,url,headRefName \
+            --jq ".[] | select(.title == \"feat: acn ${VERSION}\")" |
+            head -n 1)"
+          if [[ -n "${existing_pr}" ]]; then
+            {
+              echo "mode=existing"
+              echo "pr_number=$(jq -r '.number' <<<"${existing_pr}")"
+              echo "pr_url=$(jq -r '.url' <<<"${existing_pr}")"
+            } >>"${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          {
+            echo "mode=create"
+            echo "branch=automation/acn-${VERSION}"
+            echo "pr_number="
+            echo "pr_url="
+          } >>"${GITHUB_OUTPUT}"
+
+      - name: Checkout Homebrew tap
+        if: steps.homebrew.outputs.mode == 'create'
+        uses: actions/checkout@v5
+        with:
+          repository: Windyskr/homebrew-tap
+          token: ${{ env.CROSS_REPO_TOKEN }}
+          path: homebrew-tap
+          fetch-depth: 0
+
+      - name: Create Homebrew Formula branch
+        if: steps.homebrew.outputs.mode == 'create'
+        id: homebrew_create
+        shell: bash
+        working-directory: homebrew-tap
+        env:
+          GH_TOKEN: ${{ env.CROSS_REPO_TOKEN }}
+          VERSION: ${{ steps.release.outputs.version }}
+          SOURCE_HASH: ${{ steps.release.outputs.source_hash }}
+          BRANCH: ${{ steps.homebrew.outputs.branch }}
+        run: |
+          set -euo pipefail
+
+          git fetch origin \
+            "+refs/heads/${BRANCH}:refs/remotes/origin/${BRANCH}" || true
+          git switch --force-create "${BRANCH}" origin/main
+
+          ruby - "${TAG}" "${SOURCE_HASH}" <<'RUBY'
+          tag, source_hash = ARGV
+          path = "Formula/acn.rb"
+          content = File.read(path)
+
+          url_pattern = %r{^  url "https://github\.com/windyskr/agent-completion-notification/archive/refs/tags/v[^"]+\.tar\.gz"$}
+          sha_pattern = /^  sha256 "[0-9a-f]{64}"$/
+          raise "Formula source URL not found" unless content.match?(url_pattern)
+          raise "Formula source SHA-256 not found" unless content.match?(sha_pattern)
+
+          content.sub!(url_pattern, %(  url "https://github.com/windyskr/agent-completion-notification/archive/refs/tags/#{tag}.tar.gz"))
+          content.sub!(sha_pattern, %(  sha256 "#{source_hash}"))
+          content.sub!(/\n  bottle do\n.*?^  end\n/m, "\n")
+          File.write(path, content)
+          RUBY
+
+          changed_files="$(git diff --name-only)"
+          if [[ "${changed_files}" != "Formula/acn.rb" ]]; then
+            echo "::error::Expected only Formula/acn.rb to change, got: ${changed_files}"
+            exit 1
+          fi
+          git diff --check
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- Formula/acn.rb
+          git commit -m "feat: acn ${VERSION}"
+          git push --force-with-lease --set-upstream origin "${BRANCH}"
+
+          pr_body="${RUNNER_TEMP}/homebrew-pr.md"
+          cat >"${pr_body}" <<EOF
+          ## Summary
+
+          - update the acn source tag to \`${TAG}\`
+          - update the source archive SHA-256
+          - remove the previous release's bottle block so \`brew test-bot\` can build fresh bottles
+
+          ## Verification
+
+          - source archive SHA-256: \`${SOURCE_HASH}\`
+          - \`git diff --check\`
+
+          The official pull-request \`brew test-bot\` workflow validates the Formula before the reviewed \`brew pr-pull\` dispatch.
+          EOF
+
+          pr_url="$(gh pr create --repo "${HOMEBREW_REPO}" \
+            --base main --head "${BRANCH}" \
+            --title "feat: acn ${VERSION}" \
+            --body-file "${pr_body}")"
+          pr_number="$(gh pr view "${pr_url}" --repo "${HOMEBREW_REPO}" \
+            --json number --jq '.number')"
+          {
+            echo "pr_number=${pr_number}"
+            echo "pr_url=${pr_url}"
+          } >>"${GITHUB_OUTPUT}"
+
+      - name: Wait for Homebrew test-bot
+        if: steps.homebrew.outputs.mode != 'published'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ env.CROSS_REPO_TOKEN }}
+          PR_NUMBER: ${{ steps.homebrew.outputs.pr_number || steps.homebrew_create.outputs.pr_number }}
+          PR_URL: ${{ steps.homebrew.outputs.pr_url || steps.homebrew_create.outputs.pr_url }}
+        run: |
+          set -euo pipefail
+
+          for _ in {1..30}; do
+            check_count="$(gh pr view "${PR_NUMBER}" --repo "${HOMEBREW_REPO}" \
+              --json statusCheckRollup --jq '.statusCheckRollup | length')"
+            [[ "${check_count}" -gt 0 ]] && break
+            sleep 10
+          done
+          if [[ "${check_count}" -eq 0 ]]; then
+            echo "::error::No Homebrew test-bot checks appeared for PR #${PR_NUMBER}"
+            exit 1
+          fi
+
+          gh pr checks "${PR_NUMBER}" --repo "${HOMEBREW_REPO}" \
+            --watch --interval 10
+          head_sha="$(gh pr view "${PR_NUMBER}" --repo "${HOMEBREW_REPO}" \
+            --json headRefOid --jq '.headRefOid')"
+
+          {
+            echo "### Homebrew"
+            echo "- Formula PR: ${PR_URL}"
+            echo "- test-bot: all checks passed"
+            echo "- Head SHA for reviewed brew pr-pull: \`${head_sha}\`"
+            echo "- brew pr-pull remains a manual reviewed dispatch"
+          } >>"${GITHUB_STEP_SUMMARY}"
+
+      - name: Record existing Homebrew publication
+        if: steps.homebrew.outputs.mode == 'published'
+        shell: bash
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          {
+            echo "### Homebrew"
+            echo "- Formula ${VERSION} is already present on main"
+          } >>"${GITHUB_STEP_SUMMARY}"
