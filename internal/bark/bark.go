@@ -57,7 +57,7 @@ func (n *Notifier) Send(ctx context.Context, ev event.Event) error {
 		ID       string `json:"id,omitempty"`
 	}{
 		Title:    ev.Title(),
-		Markdown: ev.Body(n.now()),
+		Markdown: withHardLineBreaks(ev.Body(n.now())),
 		Group:    defaultGroup,
 		Icon:     iconForSource(ev.Source),
 		URL:      n.cfg.SourceURL(ev.Source),
@@ -96,6 +96,19 @@ func (n *Notifier) Send(ctx context.Context, ev event.Event) error {
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
 	}
 	return checkResponse(raw)
+}
+
+// withHardLineBreaks 保留正文段落，并让段落内的单换行符合 Markdown 强制换行语法。
+func withHardLineBreaks(markdown string) string {
+	lines := strings.Split(markdown, "\n")
+	for i := 0; i < len(lines)-1; i++ {
+		if strings.TrimSpace(lines[i]) != "" &&
+			strings.TrimSpace(lines[i+1]) != "" &&
+			!strings.HasSuffix(lines[i], "  ") {
+			lines[i] += "  "
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func iconForSource(source string) string {
