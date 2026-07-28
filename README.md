@@ -46,8 +46,9 @@ go install github.com/windyskr/agent-completion-notification/cmd/acn@latest
 
 
 ```shell
-# 配置通知渠道
-# 配置至少一个通知渠道，配置多个同步推送
+# 配置通知渠道（至少配置一个）
+
+# 推荐使用 bark：在苹果手机 App Store 搜索并下载 Bark 应用，即可获取推送地址
 acn config bark-url https://api.day.app/your_key
 acn config feishu-url https://open.feishu.cn/open-apis/bot/v2/hook/your_key
 acn config dingtalk-url https://oapi.dingtalk.com/robot/send?access_token=your_key
@@ -89,10 +90,10 @@ acn config <k> <v>             修改配置
 配置在 `~/.acn/config.json`（权限 0600），改完即时生效。
 
 ```
+acn config bark-url <url|off>   配置并启用 Bark，off 仅关闭渠道
+acn config bark-update-by-session <on|off> 同会话更新同一条 Bark 通知，避免刷屏，默认 on
 acn config feishu-url <url|off> 配置并启用飞书，off 仅关闭渠道
 acn config feishu-secret <str|off> 签名密钥，off 清除配置
-acn config bark-url <url|off>   配置并启用 Bark，off 仅关闭渠道
-acn config bark-update-by-session <on|off> 同会话更新同一条 Bark 通知，默认 on
 acn config bark-codex-open-url <url|default|off> Codex 点击地址，默认 chatgpt://codex
 acn config bark-claude-open-url <url|default|off> Claude 点击地址，默认 claude://
 acn config dingtalk-url <url|off> 配置并启用钉钉，off 仅关闭渠道

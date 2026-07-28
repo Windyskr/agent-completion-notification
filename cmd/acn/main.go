@@ -28,6 +28,20 @@ var version = "dev"
 
 const usage = `acn (Agent Completion Notification) — Agent 任务完成通知
 
+快速开始：
+  # 1.配置通知渠道（至少配置一个）
+
+  # 推荐使用 bark：在苹果手机 App Store 搜索并下载 Bark 应用，即可获取推送地址
+  acn config bark-url https://api.day.app/your_key
+  acn config feishu-url https://open.feishu.cn/open-apis/bot/v2/hook/your_key
+  acn config dingtalk-url https://oapi.dingtalk.com/robot/send?access_token=your_key
+  acn config wecom-url https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=your_key
+  # 2.安装 hooks 到 Claude Code 和 Codex
+  acn install
+  # 3.自检
+  acn doctor
+  # 重启后生效
+
 用法：
   acn install [目标]     接入 AI CLI（写入其配置，自动备份）
   acn uninstall [目标]   摘除接入
@@ -44,10 +58,10 @@ const usage = `acn (Agent Completion Notification) — Agent 任务完成通知
   codex                  仅 Codex
 
 配置项（acn config）：
+  bark-url <url|off>     配置并启用 Bark；off 仅关闭渠道
+  bark-update-by-session <on|off> 同会话更新同一条 Bark 通知，避免刷屏，默认 on
   feishu-url <url|off>   配置并启用飞书；off 仅关闭渠道
   feishu-secret <str|off> 飞书签名密钥（未开启则留空）
-  bark-url <url|off>     配置并启用 Bark；off 仅关闭渠道
-  bark-update-by-session <on|off> 同会话更新同一条 Bark 通知（默认 on）
   bark-codex-open-url <url|default|off> Codex 通知点击地址
   bark-claude-open-url <url|default|off> Claude 通知点击地址
   dingtalk-url <url|off> 配置并启用钉钉机器人
@@ -73,12 +87,6 @@ const usage = `acn (Agent Completion Notification) — Agent 任务完成通知
   codex-agent-name <名称|default>  Codex Agent 名（默认 Codex）
   claude <on|off>        是否推送 Claude Code
   codex <on|off>         是否推送 Codex
-
-快速开始：
-  acn config feishu-url https://open.feishu.cn/open-apis/bot/v2/hook/xxxx
-  # 或：acn config bark-url https://api.day.app/your_key
-  acn install
-  acn doctor
 `
 
 func main() {
