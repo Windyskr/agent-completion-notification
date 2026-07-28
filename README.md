@@ -95,6 +95,7 @@ acn config <k> <v>             修改配置
 acn config feishu-url <url|off> 配置并启用飞书，off 仅关闭渠道
 acn config feishu-secret <str|off> 签名密钥，off 清除配置
 acn config bark-url <url|off>   配置并启用 Bark，off 仅关闭渠道
+acn config bark-update-by-session <on|off> 同会话更新同一条 Bark 通知，默认 on
 acn config bark-codex-open-url <url|default|off> Codex 点击地址，默认 chatgpt://codex
 acn config bark-claude-open-url <url|default|off> Claude 点击地址，默认 claude://
 acn config dingtalk-url <url|off> 配置并启用钉钉，off 仅关闭渠道
@@ -144,6 +145,9 @@ Bark URL 使用 App 复制出的设备端点并截到 key，例如 `https://api.
 [Claude](assets/icons/claude.png) 官方图标（图标需要 iOS 15 及以上）。点击 Codex
 通知会通过 `chatgpt://codex` 打开 Codex，点击 Claude 通知会通过 `claude://`
 打开 Claude。两个来源均可传入自定义地址、`default` 恢复默认值或 `off` 单独关闭。
+默认使用事件的会话 ID 作为 Bark 字符串 `id`，同一会话的后续完成通知会更新原通知，
+不同会话分别保留；可通过 `bark-update-by-session off` 关闭。此功能需要 Bark
+v1.5.2、bark-server v2.2.5 或更高版本。
 已配置且启用的
 渠道会并发发送，一个渠道失败不会阻止另一个渠道尝试，错误信息会注明失败渠道。
 

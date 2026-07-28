@@ -51,8 +51,9 @@ type Feishu struct {
 // Bark 是 Bark App 提供的设备推送端点配置。
 type Bark struct {
 	// URL 形如 https://api.day.app/<device-key>，也支持自托管服务。
-	URL        string            `json:"url,omitempty"`
-	SourceURLs map[string]string `json:"source_urls"`
+	URL             string            `json:"url,omitempty"`
+	UpdateBySession bool              `json:"update_by_session"`
+	SourceURLs      map[string]string `json:"source_urls"`
 }
 
 // DingTalk 是钉钉自定义机器人的配置。
@@ -108,6 +109,7 @@ type Config struct {
 func Default() Config {
 	return Config{
 		Bark: Bark{
+			UpdateBySession: true,
 			SourceURLs: map[string]string{
 				"codex":  DefaultBarkCodexURL,
 				"claude": DefaultBarkClaudeURL,

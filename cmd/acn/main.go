@@ -45,6 +45,7 @@ const usage = `acn (Agent Completion Notification) — Agent 任务完成通知
   feishu-url <url|off>   配置并启用飞书；off 仅关闭渠道
   feishu-secret <str|off> 飞书签名密钥（未开启则留空）
   bark-url <url|off>     配置并启用 Bark；off 仅关闭渠道
+  bark-update-by-session <on|off> 同会话更新同一条 Bark 通知（默认 on）
   bark-codex-open-url <url|default|off> Codex 通知点击地址
   bark-claude-open-url <url|default|off> Claude 通知点击地址
   dingtalk-url <url|off> 配置并启用钉钉机器人
@@ -223,6 +224,7 @@ func cmdStatus() error {
 		onOff(cfg.ChannelEnabled(config.ChannelFeishu)), onOff(cfg.ChannelEnabled(config.ChannelBark)),
 		onOff(cfg.ChannelEnabled(config.ChannelDingTalk)), onOff(cfg.ChannelEnabled(config.ChannelWeCom)),
 		onOff(cfg.ChannelEnabled(config.ChannelTelegram)), onOff(cfg.ChannelEnabled(config.ChannelEmail)))
+	fmt.Printf("  · Bark 同会话更新：%s\n", onOff(cfg.Bark.UpdateBySession))
 	fmt.Printf("  · 标题字段：device-name=%s agent-name=%s project-name=%s\n",
 		onOff(cfg.ShowDeviceName), onOff(cfg.ShowAgentName), onOff(cfg.ShowProjectName))
 	fmt.Println("  · 设备名称：" + cfg.EffectiveDeviceName())
@@ -277,6 +279,12 @@ func cmdConfig(args []string) error {
 			cfg.Bark.URL = value
 			cfg.SetChannelEnabled(config.ChannelBark, true)
 		}
+	case "bark-update-by-session":
+		on, err := parseBool(value)
+		if err != nil {
+			return err
+		}
+		cfg.Bark.UpdateBySession = on
 	case "bark-codex-open-url", "bark-claude-open-url":
 		source := strings.TrimSuffix(strings.TrimPrefix(key, "bark-"), "-open-url")
 		if cfg.Bark.SourceURLs == nil {

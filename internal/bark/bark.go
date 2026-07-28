@@ -54,12 +54,17 @@ func (n *Notifier) Send(ctx context.Context, ev event.Event) error {
 		Group    string `json:"group"`
 		Icon     string `json:"icon,omitempty"`
 		URL      string `json:"url,omitempty"`
+		ID       string `json:"id,omitempty"`
 	}{
 		Title:    ev.Title(),
 		Markdown: ev.Body(n.now()),
 		Group:    defaultGroup,
 		Icon:     iconForSource(ev.Source),
 		URL:      n.cfg.SourceURL(ev.Source),
+	}
+	// Bark 要求 id 在 JSON 中为字符串；相同会话的后续推送会更新原通知。
+	if n.cfg.UpdateBySession {
+		payload.ID = strings.TrimSpace(ev.SessionID)
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
