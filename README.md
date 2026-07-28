@@ -95,6 +95,8 @@ acn config <k> <v>             修改配置
 acn config feishu-url <url|off> 配置并启用飞书，off 仅关闭渠道
 acn config feishu-secret <str|off> 签名密钥，off 清除配置
 acn config bark-url <url|off>   配置并启用 Bark，off 仅关闭渠道
+acn config bark-codex-open-url <url|auto|off> Codex 点击地址，默认 chatgpt://codex
+acn config bark-claude-open-url <url|auto|off> Claude 点击地址，默认 claude://
 acn config dingtalk-url <url|off> 配置并启用钉钉，off 仅关闭渠道
 acn config dingtalk-secret <str|off> 钉钉加签密钥，off 清除配置
 acn config wecom-url <url|off>  配置并启用企微，off 仅关闭渠道
@@ -137,9 +139,12 @@ acn config codex <on|off>       是否推送 Codex
 独立配置，传入 `auto` 可恢复各自的默认名称；设置 Agent 名会自动打开 Agent 名显示。
 
 Bark URL 使用 App 复制出的设备端点并截到 key，例如 `https://api.day.app/your_key`；
-不要在其后附加 title 或 body。Bark 通知默认发送到 `agent-completion-notification`
+不要在其后附加 title 或 markdown。Bark 通知默认发送到 `agent-completion-notification`
 分组，并根据来源使用仓库内置的 [Codex](assets/icons/codex.png) 或
-[Claude](assets/icons/claude.png) 官方图标（图标需要 iOS 15 及以上）。已配置且启用的
+[Claude](assets/icons/claude.png) 官方图标（图标需要 iOS 15 及以上）。点击 Codex
+通知会通过 `chatgpt://codex` 打开 Codex，点击 Claude 通知会通过 `claude://`
+打开 Claude。两个来源均可传入自定义地址、`auto` 恢复默认值或 `off` 单独关闭。
+已配置且启用的
 渠道会并发发送，一个渠道失败不会阻止另一个渠道尝试，错误信息会注明失败渠道。
 
 钉钉使用自定义机器人 webhook；若机器人开启了「加签」安全设置，再配置

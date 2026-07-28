@@ -36,6 +36,9 @@ const (
 	ChannelWeCom    = "wecom"
 	ChannelTelegram = "telegram"
 	ChannelEmail    = "email"
+
+	DefaultBarkCodexURL  = "chatgpt://codex"
+	DefaultBarkClaudeURL = "claude://"
 )
 
 // Feishu 是飞书自定义机器人的配置。
@@ -48,7 +51,8 @@ type Feishu struct {
 // Bark 是 Bark App 提供的设备推送端点配置。
 type Bark struct {
 	// URL 形如 https://api.day.app/<device-key>，也支持自托管服务。
-	URL string `json:"url,omitempty"`
+	URL        string            `json:"url,omitempty"`
+	SourceURLs map[string]string `json:"source_urls"`
 }
 
 // DingTalk 是钉钉自定义机器人的配置。
@@ -103,6 +107,12 @@ type Config struct {
 // Default 返回未落盘时的默认配置。
 func Default() Config {
 	return Config{
+		Bark: Bark{
+			SourceURLs: map[string]string{
+				"codex":  DefaultBarkCodexURL,
+				"claude": DefaultBarkClaudeURL,
+			},
+		},
 		ShowDeviceName:  false,
 		ShowAgentName:   false,
 		ShowProjectName: false,
@@ -200,6 +210,11 @@ func (c Config) FeishuReady() bool {
 // BarkReady 判断 Bark 是否已配置设备端点。
 func (c Config) BarkReady() bool {
 	return strings.TrimSpace(c.Bark.URL) != ""
+}
+
+// SourceURL 返回指定来源的通知点击地址；该来源关闭跳转或未配置时返回空字符串。
+func (b Bark) SourceURL(source string) string {
+	return strings.TrimSpace(b.SourceURLs[source])
 }
 
 func (c Config) DingTalkReady() bool { return strings.TrimSpace(c.DingTalk.WebhookURL) != "" }

@@ -49,15 +49,17 @@ func (n *Notifier) Send(ctx context.Context, ev event.Event) error {
 		return fmt.Errorf("Bark 设备端点格式无效")
 	}
 	payload := struct {
-		Title string `json:"title"`
-		Body  string `json:"body"`
-		Group string `json:"group"`
-		Icon  string `json:"icon,omitempty"`
+		Title    string `json:"title"`
+		Markdown string `json:"markdown"`
+		Group    string `json:"group"`
+		Icon     string `json:"icon,omitempty"`
+		URL      string `json:"url,omitempty"`
 	}{
-		Title: ev.Title(),
-		Body:  ev.Body(n.now()),
-		Group: defaultGroup,
-		Icon:  iconForSource(ev.Source),
+		Title:    ev.Title(),
+		Markdown: ev.Body(n.now()),
+		Group:    defaultGroup,
+		Icon:     iconForSource(ev.Source),
+		URL:      n.cfg.SourceURL(ev.Source),
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {

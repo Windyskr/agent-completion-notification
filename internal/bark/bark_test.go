@@ -47,8 +47,8 @@ func TestSendPostsJSON(t *testing.T) {
 		t.Errorf("icon = %q, 期望 Claude 官方图标", got["icon"])
 	}
 	for _, want := range []string{"2026-07-27 12:00:00", "/work/acn", "改好了"} {
-		if !strings.Contains(got["body"], want) {
-			t.Errorf("body 缺少 %q: %s", want, got["body"])
+		if !strings.Contains(got["markdown"], want) {
+			t.Errorf("markdown 缺少 %q: %s", want, got["markdown"])
 		}
 	}
 }

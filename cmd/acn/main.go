@@ -46,6 +46,8 @@ const usage = `acn (Agent Completion Notification) — Agent 任务完成通知
   feishu-url <url|off>   配置并启用飞书；off 仅关闭渠道
   feishu-secret <str|off> 飞书签名密钥（未开启则留空）
   bark-url <url|off>     配置并启用 Bark；off 仅关闭渠道
+  bark-codex-open-url <url|auto|off> Codex 通知点击地址
+  bark-claude-open-url <url|auto|off> Claude 通知点击地址
   dingtalk-url <url|off> 配置并启用钉钉机器人
   dingtalk-secret <str|off> 钉钉机器人加签密钥
   wecom-url <url|off>    配置并启用企微群机器人
@@ -227,6 +229,9 @@ func cmdStatus() error {
 	fmt.Println("  · 设备名称：" + cfg.EffectiveDeviceName())
 	fmt.Printf("  · Agent 名称：claude=%s codex=%s\n",
 		cfg.EffectiveAgentName(event.SourceClaude), cfg.EffectiveAgentName(event.SourceCodex))
+	fmt.Printf("  · Bark 点击跳转：claude=%s codex=%s\n",
+		onOff(cfg.Bark.SourceURL(event.SourceClaude) != ""),
+		onOff(cfg.Bark.SourceURL(event.SourceCodex) != ""))
 	if cfg.Feishu.Secret != "" {
 		fmt.Println("  · 飞书签名校验：已启用")
 	}
@@ -272,6 +277,23 @@ func cmdConfig(args []string) error {
 		} else {
 			cfg.Bark.URL = value
 			cfg.SetChannelEnabled(config.ChannelBark, true)
+		}
+	case "bark-codex-open-url", "bark-claude-open-url":
+		source := strings.TrimSuffix(strings.TrimPrefix(key, "bark-"), "-open-url")
+		if cfg.Bark.SourceURLs == nil {
+			cfg.Bark.SourceURLs = map[string]string{}
+		}
+		switch {
+		case strings.EqualFold(value, "auto"):
+			if source == event.SourceCodex {
+				cfg.Bark.SourceURLs[source] = config.DefaultBarkCodexURL
+			} else {
+				cfg.Bark.SourceURLs[source] = config.DefaultBarkClaudeURL
+			}
+		case strings.EqualFold(value, "off"):
+			cfg.Bark.SourceURLs[source] = ""
+		default:
+			cfg.Bark.SourceURLs[source] = value
 		}
 	case "dingtalk-url":
 		if strings.EqualFold(value, "off") {
