@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -66,6 +67,35 @@ func TestSendSkipsWithoutHTTPCall(t *testing.T) {
 	}
 	if hit {
 		t.Error("被拦截的事件仍发出了 HTTP 请求")
+	}
+}
+
+func TestSendSkipsIgnoredDirectoryWithoutHTTPCall(t *testing.T) {
+	var hit bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hit = true
+		io.WriteString(w, `{"code":0}`)
+	}))
+	defer srv.Close()
+
+	root := t.TempDir()
+	cfg := config.Config{
+		Feishu:             config.Feishu{WebhookURL: srv.URL},
+		IgnoredDirectories: []string{root},
+	}
+	skipped, err := Send(context.Background(), cfg, event.Event{
+		Source: event.SourceClaude,
+		Cwd:    filepath.Join(root, "nested"),
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(skipped, "目录已忽略") {
+		t.Errorf("跳过原因 = %q, 期望报告目录已忽略", skipped)
+	}
+	if hit {
+		t.Error("被忽略目录中的事件仍发出了 HTTP 请求")
 	}
 }
 

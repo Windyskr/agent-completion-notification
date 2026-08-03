@@ -107,6 +107,8 @@ type Config struct {
 	MinDurationSeconds int `json:"min_duration_seconds"`
 	// MaxMessageLength 限制通知中的回复原文字符数；0 表示不截断。
 	MaxMessageLength int `json:"max_message_length"`
+	// IgnoredDirectories 中的目录及其子目录不推送通知。
+	IgnoredDirectories []string `json:"ignored_directories,omitempty"`
 }
 
 // Default 返回未落盘时的默认配置。
@@ -190,6 +192,58 @@ func (c Config) SourceEnabled(source string) bool {
 	}
 	enabled, ok := c.Sources[source]
 	return !ok || enabled
+}
+
+// IgnoredDirectory 返回匹配当前工作目录的忽略规则。
+// cwd 为空或无法解析时按未匹配处理，避免路径信息缺失导致通知丢失。
+func (c Config) IgnoredDirectory(cwd string) (string, bool) {
+	cwd, err := NormalizeDirectoryPath(cwd)
+	if err != nil {
+		return "", false
+	}
+	for _, raw := range c.IgnoredDirectories {
+		directory, err := NormalizeDirectoryPath(raw)
+		if err != nil {
+			continue
+		}
+		if pathWithinDirectory(directory, cwd) {
+			return directory, true
+		}
+	}
+	return "", false
+}
+
+// AddIgnoredDirectory 添加一条忽略目录规则；同一路径重复添加不会产生重复项。
+func (c *Config) AddIgnoredDirectory(path string) error {
+	directory, err := NormalizeDirectoryPath(path)
+	if err != nil {
+		return err
+	}
+	for _, raw := range c.IgnoredDirectories {
+		if existing, err := NormalizeDirectoryPath(raw); err == nil && existing == directory {
+			return nil
+		}
+	}
+	c.IgnoredDirectories = append(c.IgnoredDirectories, directory)
+	return nil
+}
+
+// RemoveIgnoredDirectory 删除与 path 相同的忽略目录规则。
+func (c *Config) RemoveIgnoredDirectory(path string) error {
+	directory, err := NormalizeDirectoryPath(path)
+	if err != nil {
+		return err
+	}
+	remaining := c.IgnoredDirectories[:0]
+	for _, raw := range c.IgnoredDirectories {
+		existing, normalizeErr := NormalizeDirectoryPath(raw)
+		if normalizeErr == nil && existing == directory {
+			continue
+		}
+		remaining = append(remaining, raw)
+	}
+	c.IgnoredDirectories = remaining
+	return nil
 }
 
 // ChannelEnabled 判断渠道是否开启，旧配置未显式包含渠道时视为开启。

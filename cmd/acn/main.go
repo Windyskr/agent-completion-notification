@@ -79,6 +79,9 @@ const usage = `acn (Agent Completion Notification) — Agent 任务完成通知
   dingtalk|wecom|telegram|email <on|off> 是否启用对应渠道
   min-duration <秒>      低于该耗时不推送，0 为不限
   max-message-length <字符数> 通知正文最大长度，默认 1000，0 为不限
+  ignore-dir <路径|off>  忽略目录及其子目录；off 清空全部规则
+  unignore-dir <路径>   取消忽略目录
+  ignore-list            列出当前忽略目录
   device-name <名称|default> 设置并显示设备名（default 使用系统 hostname）
   show-device-name <on|off>  标题是否显示设备名（默认 off）
   show-agent-name <on|off>   标题是否显示 Agent 名（默认 off）
@@ -256,6 +259,16 @@ func cmdStatus() error {
 	} else {
 		fmt.Printf("  · 通知正文长度：%d 字符\n", cfg.MaxMessageLength)
 	}
+	if len(cfg.IgnoredDirectories) == 0 {
+		fmt.Println("  · 忽略目录：无")
+	} else {
+		fmt.Printf("  · 忽略目录：%d 个\n", len(cfg.IgnoredDirectories))
+		for _, directory := range cfg.IgnoredDirectories {
+			if directory = strings.TrimSpace(directory); directory != "" {
+				fmt.Println("    - " + directory)
+			}
+		}
+	}
 	fmt.Printf("  · 来源开关：claude=%s codex=%s\n",
 		onOff(cfg.SourceEnabled(event.SourceClaude)), onOff(cfg.SourceEnabled(event.SourceCodex)))
 
@@ -266,6 +279,9 @@ func cmdConfig(args []string) error {
 	cfg, err := config.Load()
 	if err != nil {
 		return err
+	}
+	if len(args) == 1 && args[0] == "ignore-list" {
+		return cmdIgnoreList(cfg)
 	}
 	if len(args) < 2 {
 		return fmt.Errorf("用法：acn config <配置项> <值>，运行 acn help 查看全部配置项")
@@ -385,6 +401,21 @@ func cmdConfig(args []string) error {
 			return err
 		}
 		cfg.MaxMessageLength = n
+	case "ignore-dir":
+		if strings.EqualFold(value, "off") {
+			cfg.IgnoredDirectories = nil
+			break
+		}
+		if err := cfg.AddIgnoredDirectory(value); err != nil {
+			return err
+		}
+	case "unignore-dir":
+		if strings.EqualFold(value, "off") {
+			return fmt.Errorf("unignore-dir 需要指定目录；清空全部规则请使用 ignore-dir off")
+		}
+		if err := cfg.RemoveIgnoredDirectory(value); err != nil {
+			return err
+		}
 	case "device-name":
 		if strings.EqualFold(value, "auto") {
 			return fmt.Errorf("%s 不再支持 auto，请使用 default", key)
@@ -456,6 +487,21 @@ func cmdConfig(args []string) error {
 		(key == "email-from" && os.Getenv(config.EnvEmailFrom) != "") ||
 		(key == "email-to" && os.Getenv(config.EnvEmailTo) != "") {
 		fmt.Println("注意：同名环境变量已设置，其值会覆盖此处配置")
+	}
+	return nil
+}
+
+func cmdIgnoreList(cfg config.Config) error {
+	fmt.Println("忽略目录：")
+	count := 0
+	for _, directory := range cfg.IgnoredDirectories {
+		if directory = strings.TrimSpace(directory); directory != "" {
+			fmt.Println("  " + directory)
+			count++
+		}
+	}
+	if count == 0 {
+		fmt.Println("  （无）")
 	}
 	return nil
 }

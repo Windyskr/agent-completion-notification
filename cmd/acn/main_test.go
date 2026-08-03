@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -60,6 +61,98 @@ func TestCmdConfigUsesChannelPrefixedNames(t *testing.T) {
 	if !cfg.BarkReady() || !cfg.ChannelEnabled(config.ChannelBark) {
 		t.Error("重新开启 Bark 应复用原地址")
 	}
+}
+
+func TestCmdConfigIgnoredDirectories(t *testing.T) {
+	t.Setenv(config.EnvConfigDir, t.TempDir())
+	root := filepath.Join(t.TempDir(), "project")
+	other := filepath.Join(t.TempDir(), "other")
+
+	if err := cmdConfig([]string{"ignore-dir", root}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdConfig([]string{"ignore-dir", root}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdConfig([]string{"ignore-dir", other}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.IgnoredDirectories) != 2 {
+		t.Fatalf("忽略目录数量 = %d, 期望 2: %v", len(cfg.IgnoredDirectories), cfg.IgnoredDirectories)
+	}
+
+	if err := cmdConfig([]string{"unignore-dir", root}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.IgnoredDirectories) != 1 || cfg.IgnoredDirectories[0] != other {
+		t.Errorf("移除目录后规则错误: %v", cfg.IgnoredDirectories)
+	}
+
+	if err := cmdConfig([]string{"ignore-dir", "off"}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.IgnoredDirectories) != 0 {
+		t.Errorf("ignore-dir off 后仍有规则: %v", cfg.IgnoredDirectories)
+	}
+}
+
+func TestCmdConfigIgnoreList(t *testing.T) {
+	t.Setenv(config.EnvConfigDir, t.TempDir())
+	root := filepath.Join(t.TempDir(), "project")
+	if err := cmdConfig([]string{"ignore-dir", root}); err != nil {
+		t.Fatal(err)
+	}
+
+	output := captureStdout(t, func() error {
+		return cmdConfig([]string{"ignore-list"})
+	})
+	if !strings.Contains(output, "忽略目录：") || !strings.Contains(output, root) {
+		t.Errorf("ignore-list 输出错误: %q", output)
+	}
+
+	if err := cmdConfig([]string{"ignore-dir", "off"}); err != nil {
+		t.Fatal(err)
+	}
+	output = captureStdout(t, func() error {
+		return cmdConfig([]string{"ignore-list"})
+	})
+	if !strings.Contains(output, "（无）") {
+		t.Errorf("空 ignore-list 输出错误: %q", output)
+	}
+}
+
+func captureStdout(t *testing.T, fn func() error) string {
+	t.Helper()
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := os.Stdout
+	os.Stdout = writer
+	callErr := fn()
+	_ = writer.Close()
+	os.Stdout = original
+	data, readErr := io.ReadAll(reader)
+	_ = reader.Close()
+	if callErr != nil {
+		t.Fatal(callErr)
+	}
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	return string(data)
 }
 
 func TestCmdConfigDeviceNameEnablesDisplay(t *testing.T) {

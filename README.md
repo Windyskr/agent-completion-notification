@@ -116,6 +116,9 @@ acn config telegram <on|off>    是否启用 Telegram 渠道
 acn config email <on|off>       是否启用 Email 渠道
 acn config min-duration <秒>    低于该耗时不推送，0 为不限
 acn config max-message-length <字符数> 通知正文最大长度，默认 1000，0 为不限
+acn config ignore-dir <路径|off> 忽略目录及其子目录；off 清空全部规则
+acn config unignore-dir <路径>  取消忽略目录
+acn config ignore-list          列出当前忽略目录
 acn config device-name <名称|default>  设置并显示设备名（默认使用系统 hostname）
 acn config show-device-name <on|off>   是否显示设备名，默认 off
 acn config show-agent-name <on|off>    是否显示 Agent 名，默认 off
@@ -151,6 +154,11 @@ v1.5.2、bark-server v2.2.5 或更高版本。
 渠道会并发发送，一个渠道失败不会阻止另一个渠道尝试，错误信息会注明失败渠道。
 通知中的回复原文默认最多保留 1000 个字符，可通过 `max-message-length` 修改；
 设置为 `0` 时不截断。
+
+可以使用 `ignore-dir` 忽略某个目录及其所有子目录下的完成通知；路径会保存为绝对路径，
+目录本身和子目录都会匹配，不会误匹配同名前缀的其它目录。使用 `unignore-dir` 移除单条规则，
+使用 `ignore-list` 查看当前规则，使用 `ignore-dir off` 清空全部忽略规则。忽略发生在通知渠道发送之前，因此所有已配置渠道都会跳过，
+并在 hook 的 stderr 中报告跳过原因。
 
 钉钉使用自定义机器人 webhook；若机器人开启了「加签」安全设置，再配置
 `dingtalk-secret`。企微使用群机器人 webhook。Telegram 需要先通过 BotFather 创建

@@ -35,6 +35,9 @@ func Gate(cfg config.Config, ev event.Event) string {
 	if !cfg.SourceEnabled(ev.Source) {
 		return "来源已禁用：" + ev.Source
 	}
+	if directory, ok := cfg.IgnoredDirectory(ev.Cwd); ok {
+		return "目录已忽略：" + directory
+	}
 	// 耗时未知时不套用阈值，否则会把取不到起点的通知全部挡掉。
 	if cfg.MinDurationSeconds > 0 && ev.DurationMS > 0 {
 		if ev.DurationMS < int64(cfg.MinDurationSeconds)*1000 {

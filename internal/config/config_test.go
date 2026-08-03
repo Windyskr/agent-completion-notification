@@ -136,3 +136,53 @@ func TestLoadPreservesExplicitTitleVisibility(t *testing.T) {
 			cfg.ShowDeviceName, cfg.ShowAgentName, cfg.ShowProjectName)
 	}
 }
+
+func TestIgnoredDirectoryMatchesRootAndDescendants(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "project")
+	cfg := Config{IgnoredDirectories: []string{root}}
+
+	for _, cwd := range []string{
+		root,
+		filepath.Join(root, "nested"),
+		filepath.Join(root, "nested", "child"),
+	} {
+		if matched, ok := cfg.IgnoredDirectory(cwd); !ok || matched != root {
+			t.Errorf("IgnoredDirectory(%q) = %q, %v; 期望匹配 %q", cwd, matched, ok, root)
+		}
+	}
+}
+
+func TestIgnoredDirectoryDoesNotMatchSiblingPrefixOrEmptyPath(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "app")
+	cfg := Config{IgnoredDirectories: []string{root}}
+
+	for _, cwd := range []string{
+		root + "-other",
+		filepath.Join(filepath.Dir(root), "application"),
+		"",
+	} {
+		if matched, ok := cfg.IgnoredDirectory(cwd); ok {
+			t.Errorf("IgnoredDirectory(%q) 意外匹配 %q", cwd, matched)
+		}
+	}
+}
+
+func TestIgnoredDirectoryConfigurationIsIdempotent(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "project")
+	var cfg Config
+	if err := cfg.AddIgnoredDirectory(root); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.AddIgnoredDirectory(root + string(filepath.Separator)); err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.IgnoredDirectories) != 1 {
+		t.Fatalf("重复目录被保存了 %d 次", len(cfg.IgnoredDirectories))
+	}
+	if err := cfg.RemoveIgnoredDirectory(root); err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.IgnoredDirectories) != 0 {
+		t.Fatalf("目录移除后仍有规则: %v", cfg.IgnoredDirectories)
+	}
+}
