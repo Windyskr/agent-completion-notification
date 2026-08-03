@@ -66,6 +66,8 @@ func cmdDoctor() error {
 		checkWeCom(cfg),
 		checkTelegram(cfg),
 		checkEmail(cfg),
+		checkSlack(cfg),
+		checkTeams(cfg),
 	}
 	checks = append(checks, checkDelivery(cfg))
 
@@ -270,6 +272,26 @@ func checkEmail(cfg config.Config) check {
 		return check{"Email SMTP", levelUnknown, "未完整配置（可选）", ""}
 	}
 	return check{"Email SMTP", levelOK, describeEmail(cfg), ""}
+}
+
+func checkSlack(cfg config.Config) check {
+	if !cfg.ChannelEnabled(config.ChannelSlack) {
+		return check{"Slack webhook", levelUnknown, "已禁用", ""}
+	}
+	if !cfg.SlackReady() {
+		return check{"Slack webhook", levelUnknown, "未配置（可选）", ""}
+	}
+	return check{"Slack webhook", levelOK, strings.TrimSpace(cfg.Slack.WebhookURL), ""}
+}
+
+func checkTeams(cfg config.Config) check {
+	if !cfg.ChannelEnabled(config.ChannelTeams) {
+		return check{"Teams webhook", levelUnknown, "已禁用", ""}
+	}
+	if !cfg.TeamsReady() {
+		return check{"Teams webhook", levelUnknown, "未配置（可选）", ""}
+	}
+	return check{"Teams webhook", levelOK, strings.TrimSpace(cfg.Teams.WebhookURL), ""}
 }
 
 // checkDelivery 真的推一条，走与 hook 完全相同的路径。

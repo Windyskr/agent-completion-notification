@@ -23,7 +23,8 @@ func TestDefaultTitleVisibility(t *testing.T) {
 	if got := cfg.EffectiveAgentName("codex"); got != "Codex" {
 		t.Errorf("Codex 默认 Agent 名 = %q", got)
 	}
-	if !cfg.ChannelEnabled("feishu") || !cfg.ChannelEnabled("bark") {
+	if !cfg.ChannelEnabled("feishu") || !cfg.ChannelEnabled("bark") ||
+		!cfg.ChannelEnabled(ChannelSlack) || !cfg.ChannelEnabled(ChannelTeams) {
 		t.Error("通知渠道默认应开启")
 	}
 }
@@ -75,6 +76,23 @@ func TestLoadAppliesBarkEnvironment(t *testing.T) {
 	}
 }
 
+func TestLoadAppliesSlackAndTeamsEnvironment(t *testing.T) {
+	t.Setenv(EnvConfigDir, t.TempDir())
+	t.Setenv(EnvSlackWebhook, "https://hooks.slack.test/webhook")
+	t.Setenv(EnvTeamsWebhook, "https://teams.test/webhook")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Slack.WebhookURL != "https://hooks.slack.test/webhook" {
+		t.Errorf("Slack URL = %q, 环境变量应优先", cfg.Slack.WebhookURL)
+	}
+	if cfg.Teams.WebhookURL != "https://teams.test/webhook" {
+		t.Errorf("Teams URL = %q, 环境变量应优先", cfg.Teams.WebhookURL)
+	}
+}
+
 func TestDeliveryReadyRequiresConfiguredEnabledChannel(t *testing.T) {
 	cfg := Default()
 	if cfg.DeliveryReady() {
@@ -87,6 +105,15 @@ func TestDeliveryReadyRequiresConfiguredEnabledChannel(t *testing.T) {
 	cfg.Channels["bark"] = false
 	if cfg.DeliveryReady() {
 		t.Error("Bark 已禁用时不应可投递")
+	}
+	cfg.Slack.WebhookURL = "https://hooks.slack.test/webhook"
+	if !cfg.DeliveryReady() {
+		t.Error("已配置 Slack 时应可投递")
+	}
+	cfg.Channels[ChannelSlack] = false
+	cfg.Teams.WebhookURL = "https://teams.test/webhook"
+	if !cfg.DeliveryReady() {
+		t.Error("已配置 Teams 时应可投递")
 	}
 }
 

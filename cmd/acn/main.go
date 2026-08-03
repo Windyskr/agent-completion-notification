@@ -36,6 +36,8 @@ const usage = `acn (Agent Completion Notification) — Agent 任务完成通知
   acn config feishu-url https://open.feishu.cn/open-apis/bot/v2/hook/your_key
   acn config dingtalk-url https://oapi.dingtalk.com/robot/send?access_token=your_key
   acn config wecom-url https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=your_key
+  acn config slack-url https://hooks.slack.com/services/your/webhook
+  acn config teams-url https://your-teams-webhook-url
   # 2.安装 hooks 到 Claude Code 和 Codex
   acn install
   # 3.自检
@@ -73,10 +75,12 @@ const usage = `acn (Agent Completion Notification) — Agent 任务完成通知
   email-username <str> SMTP 用户名
   email-password <str|off> SMTP 密码或授权码
   email-from <address> 发件人地址
-  email-to <addresses> 收件人地址，多个用逗号分隔
+  email-to <addresses>  收件人地址，多个用逗号分隔
+  slack-url <url|off>    配置并启用 Slack Incoming Webhook
+  teams-url <url|off>    配置并启用 Microsoft Teams Incoming Webhook
   feishu <on|off>        是否启用飞书渠道
   bark <on|off>          是否启用 Bark 渠道
-  dingtalk|wecom|telegram|email <on|off> 是否启用对应渠道
+  dingtalk|wecom|telegram|email|slack|teams <on|off> 是否启用对应渠道
   min-duration <秒>      低于该耗时不推送，0 为不限
   max-message-length <字符数> 通知正文最大长度，默认 1000，0 为不限
   ignore-dir <路径|off>  忽略目录及其子目录；off 清空全部规则
@@ -199,6 +203,8 @@ func cmdInstall(targets []string) error {
 		fmt.Println("  企微：acn config wecom-url <机器人地址>")
 		fmt.Println("  Telegram：acn config telegram-token <token> && acn config telegram-chat-id <id>")
 		fmt.Println("  Email：acn config email-smtp <host:port>（并配置账号、发件人和收件人）")
+		fmt.Println("  Slack：acn config slack-url <Incoming Webhook 地址>")
+		fmt.Println("  Teams：acn config teams-url <Incoming Webhook 地址>")
 	}
 	fmt.Println("提示：两个 CLI 均需重启后生效；装好后可用 acn doctor 自检")
 	return nil
@@ -232,10 +238,13 @@ func cmdStatus() error {
 	fmt.Println("  " + mark(cfg.ChannelEnabled(config.ChannelWeCom) && cfg.WeComReady()) + " 企微 webhook：" + describeEndpoint(cfg.WeComReady(), cfg.WeCom.WebhookURL))
 	fmt.Println("  " + mark(cfg.ChannelEnabled(config.ChannelTelegram) && cfg.TelegramReady()) + " Telegram bot：" + describeTelegram(cfg))
 	fmt.Println("  " + mark(cfg.ChannelEnabled(config.ChannelEmail) && cfg.EmailReady()) + " Email SMTP：" + describeEmail(cfg))
-	fmt.Printf("  · 渠道开关：feishu=%s bark=%s dingtalk=%s wecom=%s telegram=%s email=%s\n",
+	fmt.Println("  " + mark(cfg.ChannelEnabled(config.ChannelSlack) && cfg.SlackReady()) + " Slack webhook：" + describeEndpoint(cfg.SlackReady(), cfg.Slack.WebhookURL))
+	fmt.Println("  " + mark(cfg.ChannelEnabled(config.ChannelTeams) && cfg.TeamsReady()) + " Teams webhook：" + describeEndpoint(cfg.TeamsReady(), cfg.Teams.WebhookURL))
+	fmt.Printf("  · 渠道开关：feishu=%s bark=%s dingtalk=%s wecom=%s telegram=%s email=%s slack=%s teams=%s\n",
 		onOff(cfg.ChannelEnabled(config.ChannelFeishu)), onOff(cfg.ChannelEnabled(config.ChannelBark)),
 		onOff(cfg.ChannelEnabled(config.ChannelDingTalk)), onOff(cfg.ChannelEnabled(config.ChannelWeCom)),
-		onOff(cfg.ChannelEnabled(config.ChannelTelegram)), onOff(cfg.ChannelEnabled(config.ChannelEmail)))
+		onOff(cfg.ChannelEnabled(config.ChannelTelegram)), onOff(cfg.ChannelEnabled(config.ChannelEmail)),
+		onOff(cfg.ChannelEnabled(config.ChannelSlack)), onOff(cfg.ChannelEnabled(config.ChannelTeams)))
 	fmt.Printf("  · Bark 同会话更新：%s\n", onOff(cfg.Bark.UpdateBySession))
 	fmt.Printf("  · 标题字段：device-name=%s agent-name=%s project-name=%s\n",
 		onOff(cfg.ShowDeviceName), onOff(cfg.ShowAgentName), onOff(cfg.ShowProjectName))
@@ -383,7 +392,21 @@ func cmdConfig(args []string) error {
 		cfg.Email.From = value
 	case "email-to":
 		cfg.Email.To = value
-	case "feishu", "bark", "dingtalk", "wecom", "telegram", "email":
+	case "slack-url":
+		if strings.EqualFold(value, "off") {
+			cfg.SetChannelEnabled(config.ChannelSlack, false)
+		} else {
+			cfg.Slack.WebhookURL = value
+			cfg.SetChannelEnabled(config.ChannelSlack, true)
+		}
+	case "teams-url":
+		if strings.EqualFold(value, "off") {
+			cfg.SetChannelEnabled(config.ChannelTeams, false)
+		} else {
+			cfg.Teams.WebhookURL = value
+			cfg.SetChannelEnabled(config.ChannelTeams, true)
+		}
+	case "feishu", "bark", "dingtalk", "wecom", "telegram", "email", "slack", "teams":
 		on, err := parseBool(value)
 		if err != nil {
 			return err
@@ -485,7 +508,9 @@ func cmdConfig(args []string) error {
 		(key == "email-username" && os.Getenv(config.EnvEmailUsername) != "") ||
 		(key == "email-password" && os.Getenv(config.EnvEmailPassword) != "") ||
 		(key == "email-from" && os.Getenv(config.EnvEmailFrom) != "") ||
-		(key == "email-to" && os.Getenv(config.EnvEmailTo) != "") {
+		(key == "email-to" && os.Getenv(config.EnvEmailTo) != "") ||
+		(key == "slack-url" && os.Getenv(config.EnvSlackWebhook) != "") ||
+		(key == "teams-url" && os.Getenv(config.EnvTeamsWebhook) != "") {
 		fmt.Println("注意：同名环境变量已设置，其值会覆盖此处配置")
 	}
 	return nil

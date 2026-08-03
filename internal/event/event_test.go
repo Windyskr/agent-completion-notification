@@ -124,7 +124,7 @@ func TestBodyWithoutMessageStartsWithDetails(t *testing.T) {
 
 // 超长回复要按字符截断（不能切断中文），并加省略号。
 func TestBodyTruncatesLongMessage(t *testing.T) {
-	long := strings.Repeat("中", 800)
+	long := strings.Repeat("中", DefaultMaxMessageLength+100)
 	body := Event{Source: SourceClaude, Message: long}.Body(time.Now())
 
 	if !strings.Contains(body, "…") {

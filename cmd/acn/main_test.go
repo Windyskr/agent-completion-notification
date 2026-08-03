@@ -26,6 +26,12 @@ func TestCmdConfigUsesChannelPrefixedNames(t *testing.T) {
 	if err := cmdConfig([]string{"bark-url", "https://api.day.app/bark-key"}); err != nil {
 		t.Fatal(err)
 	}
+	if err := cmdConfig([]string{"slack-url", "https://hooks.slack.test/slack-key"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdConfig([]string{"teams-url", "https://teams.test/teams-key"}); err != nil {
+		t.Fatal(err)
+	}
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -37,8 +43,42 @@ func TestCmdConfigUsesChannelPrefixedNames(t *testing.T) {
 	if cfg.Bark.URL != "https://api.day.app/bark-key" {
 		t.Errorf("Bark URL = %q", cfg.Bark.URL)
 	}
-	if !cfg.ChannelEnabled(config.ChannelFeishu) || !cfg.ChannelEnabled(config.ChannelBark) {
+	if cfg.Slack.WebhookURL != "https://hooks.slack.test/slack-key" {
+		t.Errorf("Slack URL = %q", cfg.Slack.WebhookURL)
+	}
+	if cfg.Teams.WebhookURL != "https://teams.test/teams-key" {
+		t.Errorf("Teams URL = %q", cfg.Teams.WebhookURL)
+	}
+	if !cfg.ChannelEnabled(config.ChannelFeishu) || !cfg.ChannelEnabled(config.ChannelBark) ||
+		!cfg.ChannelEnabled(config.ChannelSlack) || !cfg.ChannelEnabled(config.ChannelTeams) {
 		t.Error("设置渠道 URL 后应自动启用渠道")
+	}
+	if err := cmdConfig([]string{"slack-url", "off"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdConfig([]string{"teams-url", "off"}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.SlackReady() || cfg.ChannelEnabled(config.ChannelSlack) ||
+		!cfg.TeamsReady() || cfg.ChannelEnabled(config.ChannelTeams) {
+		t.Error("Slack/Teams URL off 应保留地址并关闭渠道")
+	}
+	if err := cmdConfig([]string{"slack", "on"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdConfig([]string{"teams", "on"}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.ChannelEnabled(config.ChannelSlack) || !cfg.ChannelEnabled(config.ChannelTeams) {
+		t.Error("重新开启 Slack/Teams 应复用原地址")
 	}
 
 	if err := cmdConfig([]string{"bark-url", "off"}); err != nil {

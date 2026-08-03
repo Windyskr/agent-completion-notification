@@ -152,6 +152,37 @@ func TestSendDeliversAllConfiguredChannels(t *testing.T) {
 	}
 }
 
+func TestSendDeliversSlackAndTeams(t *testing.T) {
+	var slackBody, teamsBody string
+	slackSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		slackBody = string(body)
+		io.WriteString(w, "ok")
+	}))
+	t.Cleanup(slackSrv.Close)
+	teamsSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		teamsBody = string(body)
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	t.Cleanup(teamsSrv.Close)
+
+	cfg := config.Config{
+		Slack: config.Slack{WebhookURL: slackSrv.URL},
+		Teams: config.Teams{WebhookURL: teamsSrv.URL},
+	}
+	_, err := Send(context.Background(), cfg, event.Event{Source: event.SourceClaude, SessionName: "新渠道", Message: "完成"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(slackBody, "新渠道") || !strings.Contains(slackBody, "完成") {
+		t.Errorf("Slack 请求体错误: %s", slackBody)
+	}
+	if !strings.Contains(teamsBody, "新渠道") || !strings.Contains(teamsBody, "完成") {
+		t.Errorf("Teams 请求体错误: %s", teamsBody)
+	}
+}
+
 func TestSendUsesOnlySessionNameByDefault(t *testing.T) {
 	var payload struct {
 		Content struct {

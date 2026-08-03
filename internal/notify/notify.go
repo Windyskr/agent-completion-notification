@@ -14,6 +14,8 @@ import (
 	"github.com/windyskr/agent-completion-notification/internal/email"
 	"github.com/windyskr/agent-completion-notification/internal/event"
 	"github.com/windyskr/agent-completion-notification/internal/feishu"
+	"github.com/windyskr/agent-completion-notification/internal/slack"
+	"github.com/windyskr/agent-completion-notification/internal/teams"
 	"github.com/windyskr/agent-completion-notification/internal/telegram"
 	"github.com/windyskr/agent-completion-notification/internal/wecom"
 )
@@ -103,6 +105,12 @@ func configuredNotifiers(cfg config.Config) []Notifier {
 	}
 	if cfg.ChannelEnabled(config.ChannelEmail) && cfg.EmailReady() {
 		notifiers = append(notifiers, email.New(cfg.Email))
+	}
+	if cfg.ChannelEnabled(config.ChannelSlack) && cfg.SlackReady() {
+		notifiers = append(notifiers, slack.New(cfg.Slack))
+	}
+	if cfg.ChannelEnabled(config.ChannelTeams) && cfg.TeamsReady() {
+		notifiers = append(notifiers, teams.New(cfg.Teams))
 	}
 	return notifiers
 }

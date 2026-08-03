@@ -31,6 +31,8 @@ const (
 	EnvEmailPassword   = "ACN_EMAIL_PASSWORD"
 	EnvEmailFrom       = "ACN_EMAIL_FROM"
 	EnvEmailTo         = "ACN_EMAIL_TO"
+	EnvSlackWebhook    = "ACN_SLACK_WEBHOOK_URL"
+	EnvTeamsWebhook    = "ACN_TEAMS_WEBHOOK_URL"
 
 	ChannelFeishu   = "feishu"
 	ChannelBark     = "bark"
@@ -38,6 +40,8 @@ const (
 	ChannelWeCom    = "wecom"
 	ChannelTelegram = "telegram"
 	ChannelEmail    = "email"
+	ChannelSlack    = "slack"
+	ChannelTeams    = "teams"
 
 	DefaultBarkCodexURL  = "chatgpt://codex"
 	DefaultBarkClaudeURL = "claude://"
@@ -84,6 +88,16 @@ type Email struct {
 	To          string `json:"to"`
 }
 
+// Slack 是 Slack Incoming Webhook 的配置。
+type Slack struct {
+	WebhookURL string `json:"webhook_url"`
+}
+
+// Teams 是 Microsoft Teams Incoming Webhook 的配置。
+type Teams struct {
+	WebhookURL string `json:"webhook_url"`
+}
+
 // Config 是 acn 的全部配置。
 type Config struct {
 	Feishu   Feishu   `json:"feishu"`
@@ -92,6 +106,8 @@ type Config struct {
 	WeCom    WeCom    `json:"wecom"`
 	Telegram Telegram `json:"telegram"`
 	Email    Email    `json:"email"`
+	Slack    Slack    `json:"slack"`
+	Teams    Teams    `json:"teams"`
 	// DeviceName 用于通知标题；留空时取系统 hostname。
 	DeviceName      string `json:"device_name,omitempty"`
 	ShowDeviceName  bool   `json:"show_device_name"`
@@ -129,6 +145,7 @@ func Default() Config {
 		Channels: map[string]bool{
 			ChannelFeishu: true, ChannelBark: true, ChannelDingTalk: true,
 			ChannelWeCom: true, ChannelTelegram: true, ChannelEmail: true,
+			ChannelSlack: true, ChannelTeams: true,
 		},
 		Sources: map[string]bool{"claude": true, "codex": true},
 	}
@@ -287,6 +304,8 @@ func (c Config) EmailReady() bool {
 	return strings.TrimSpace(c.Email.SMTPAddress) != "" &&
 		strings.TrimSpace(c.Email.From) != "" && strings.TrimSpace(c.Email.To) != ""
 }
+func (c Config) SlackReady() bool { return strings.TrimSpace(c.Slack.WebhookURL) != "" }
+func (c Config) TeamsReady() bool { return strings.TrimSpace(c.Teams.WebhookURL) != "" }
 
 // DeliveryReady 判断是否至少有一个已启用且配置完整的通知渠道。
 func (c Config) DeliveryReady() bool {
@@ -295,7 +314,9 @@ func (c Config) DeliveryReady() bool {
 		(c.ChannelEnabled(ChannelDingTalk) && c.DingTalkReady()) ||
 		(c.ChannelEnabled(ChannelWeCom) && c.WeComReady()) ||
 		(c.ChannelEnabled(ChannelTelegram) && c.TelegramReady()) ||
-		(c.ChannelEnabled(ChannelEmail) && c.EmailReady())
+		(c.ChannelEnabled(ChannelEmail) && c.EmailReady()) ||
+		(c.ChannelEnabled(ChannelSlack) && c.SlackReady()) ||
+		(c.ChannelEnabled(ChannelTeams) && c.TeamsReady())
 }
 
 // EffectiveDeviceName 返回通知中展示的设备名。显式配置优先，无法读取
@@ -369,6 +390,12 @@ func (c *Config) applyEnv() {
 	}
 	if v := strings.TrimSpace(os.Getenv(EnvEmailTo)); v != "" {
 		c.Email.To = v
+	}
+	if v := strings.TrimSpace(os.Getenv(EnvSlackWebhook)); v != "" {
+		c.Slack.WebhookURL = v
+	}
+	if v := strings.TrimSpace(os.Getenv(EnvTeamsWebhook)); v != "" {
+		c.Teams.WebhookURL = v
 	}
 }
 

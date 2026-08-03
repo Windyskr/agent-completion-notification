@@ -1,6 +1,6 @@
 # acn（Agent Completion Notification）
 
-推送 Agent (Claude code、Codex）完成通知到 Bark、飞书、钉钉、企微、TG等。
+推送 Agent (Claude code、Codex）完成通知到 Bark、飞书、钉钉、企微、Slack、Teams、TG等。
 原生 Stop hook 接入，单文件极小体积，一行命令即可安装，无常驻进程，无 GUI。
 
 ![acn 接收 Claude Code 和 Codex 完成事件并分发到多种通知渠道](assets/acn-flow.png)
@@ -53,6 +53,8 @@ acn config bark-url https://api.day.app/your_key
 acn config feishu-url https://open.feishu.cn/open-apis/bot/v2/hook/your_key
 acn config dingtalk-url https://oapi.dingtalk.com/robot/send?access_token=your_key
 acn config wecom-url https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=your_key
+acn config slack-url https://hooks.slack.com/services/your/webhook
+acn config teams-url https://your-teams-webhook-url
 # 安装 hooks 到 Claude Code 和 Codex
 acn install
 # 自检
@@ -106,6 +108,8 @@ acn config email-username <str> SMTP 用户名
 acn config email-password <str> SMTP 密码或授权码
 acn config email-from <address> 发件人地址
 acn config email-to <addresses> 收件人地址，多个用逗号分隔
+acn config slack-url <url|off> 配置并启用 Slack Incoming Webhook，off 仅关闭渠道
+acn config teams-url <url|off> 配置并启用 Teams Incoming Webhook，off 仅关闭渠道
 
 
 acn config feishu <on|off>      是否启用飞书渠道
@@ -114,6 +118,8 @@ acn config dingtalk <on|off>    是否启用钉钉渠道
 acn config wecom <on|off>       是否启用企微渠道
 acn config telegram <on|off>    是否启用 Telegram 渠道
 acn config email <on|off>       是否启用 Email 渠道
+acn config slack <on|off>       是否启用 Slack 渠道
+acn config teams <on|off>       是否启用 Teams 渠道
 acn config min-duration <秒>    低于该耗时不推送，0 为不限
 acn config max-message-length <字符数> 通知正文最大长度，默认 1000，0 为不限
 acn config ignore-dir <路径|off> 忽略目录及其子目录；off 清空全部规则
@@ -163,6 +169,8 @@ v1.5.2、bark-server v2.2.5 或更高版本。
 钉钉使用自定义机器人 webhook；若机器人开启了「加签」安全设置，再配置
 `dingtalk-secret`。企微使用群机器人 webhook。Telegram 需要先通过 BotFather 创建
 Bot，再配置 bot token 和目标 `chat_id`；Bot 必须已加入目标群组或频道并具备发消息权限。
+Slack 使用 Slack App 的 Incoming Webhook URL；Teams 使用频道或聊天中创建的
+Incoming Webhook URL，发送兼容 MessageCard 的 Markdown 通知。
 Email 使用标准 SMTP：465 端口自动使用隐式 TLS，其他端口要求服务器支持 STARTTLS。
 建议使用邮箱服务商生成的应用专用密码或授权码，不要使用主账号密码。
 
@@ -173,7 +181,7 @@ Email 使用标准 SMTP：465 端口自动使用隐式 TLS，其他端口要求�
 `ACN_DINGTALK_WEBHOOK_URL`、`ACN_DINGTALK_SECRET`、`ACN_WECOM_WEBHOOK_URL`、
 `ACN_TELEGRAM_BOT_TOKEN`、`ACN_TELEGRAM_CHAT_ID`、`ACN_EMAIL_SMTP`、
 `ACN_EMAIL_USERNAME`、`ACN_EMAIL_PASSWORD`、`ACN_EMAIL_FROM`、`ACN_EMAIL_TO`、
-`ACN_DEVICE_NAME`
+`ACN_SLACK_WEBHOOK_URL`、`ACN_TEAMS_WEBHOOK_URL`、`ACN_DEVICE_NAME`
 优先级高于配置文件。
 `ACN_CONFIG_DIR` 可改配置目录。
 
