@@ -76,6 +76,17 @@ Keep the tap's Actions defaults at read-only with automatic PR creation/approval
 - Homebrew: experimental automation was removed; clean Formula-only PR `Windyskr/homebrew-tap#4` passed the official Intel macOS, Apple Silicon macOS, and Linux test-bot matrix. The official `brew pr-pull` workflow was then run with head SHA `74aa55b42f24214bfdb548a3a52e69140b799dee`.
 - Final Homebrew state: Formula `1.1.2` and bottle release `acn-1.1.2` were verified. The temporary tap clone was removed and both repositories were clean.
 
+### v1.4.0 Failure and Recovery Record (2026-08-06)
+
+- Release commit/tag: `ebbf99d feat: 支持 OpenCode 完成通知`, annotated tag `v1.4.0`. The GitHub Release and all archives completed successfully.
+- Scoop succeeded before the failure: `bucket/acn.json` was already at `1.4.0` with matching Windows archive URLs and SHA-256 hashes.
+- The automatic package-manager run `31025931230` failed only at `Wait for Homebrew test-bot` after creating `Windyskr/homebrew-tap#11`.
+- Exact cause: the Formula generator removed the previous `bottle do` block with a replacement that left three consecutive newlines. `brew style` reported `Formula/acn.rb:11:1 Layout/EmptyLines: Extra blank line detected`, so the macOS and Linux test-bot jobs failed or were cancelled. This was a deterministic Formula formatting bug, not a network, release-asset, PAT, or Scoop failure.
+- Permanent fix: `b939104 fix(ci): 修复 Homebrew Formula 空行` makes the Ruby replacement consume the blank line after the removed bottle block, leaving the standard single blank line between Formula declarations.
+- Recovery: Formula PR head `e90384aef77cb828cd9abe21b2d32a1f76142e30` removed the extra line; official macOS 15, macOS 26, and Linux test-bot checks then passed. Manual idempotent package-manager run `31026617293` succeeded, followed by reviewed `brew pr-pull` run `31026791941` using PR `#11` and its full head SHA.
+- Final state: `Formula/acn.rb` on tap `main` points to `v1.4.0`, the `acn-1.4.0` bottle release contains all three platform bottles, PR `#11` is closed by `brew pr-pull`, and the source repository is clean.
+- If this failure signature appears again, inspect the Homebrew PR test-bot job first. Do not repeatedly dispatch the source package-manager workflow while the PR checks are red; correct the Formula formatting on the PR branch, wait for the pull-request-triggered test-bot matrix, then rerun the idempotent package-manager workflow and perform the reviewed `brew pr-pull` dispatch.
+
 ## Security & Hook Constraints
 
 Never commit Feishu, Slack, or Teams webhook URLs, Feishu signing secrets, or Bark device endpoints. Use `ACN_FEISHU_WEBHOOK_URL`, `ACN_FEISHU_SECRET`, `ACN_BARK_URL`, `ACN_SLACK_WEBHOOK_URL`, `ACN_TEAMS_WEBHOOK_URL`, `ACN_DEVICE_NAME`, or a local `~/.acn/config.json`. The `acn hook` path must never write to stdout: Codex interprets hook output as control data. Send all diagnostics to stderr and keep notification failures from interrupting the parent CLI workflow.
