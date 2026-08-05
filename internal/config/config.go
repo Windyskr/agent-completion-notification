@@ -141,13 +141,13 @@ func Default() Config {
 		ShowAgentName:    false,
 		ShowProjectName:  false,
 		MaxMessageLength: event.DefaultMaxMessageLength,
-		AgentNames:       map[string]string{"claude": "claude", "codex": "Codex"},
+		AgentNames:       map[string]string{"claude": "claude", "codex": "Codex", "opencode": "OpenCode"},
 		Channels: map[string]bool{
 			ChannelFeishu: true, ChannelBark: true, ChannelDingTalk: true,
 			ChannelWeCom: true, ChannelTelegram: true, ChannelEmail: true,
 			ChannelSlack: true, ChannelTeams: true,
 		},
-		Sources: map[string]bool{"claude": true, "codex": true},
+		Sources: map[string]bool{"claude": true, "codex": true, "opencode": true},
 	}
 }
 
@@ -343,6 +343,8 @@ func (c Config) EffectiveAgentName(source string) string {
 		return "claude"
 	case "codex":
 		return "Codex"
+	case "opencode":
+		return "OpenCode"
 	default:
 		return strings.TrimSpace(source)
 	}

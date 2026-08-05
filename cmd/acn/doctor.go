@@ -59,6 +59,7 @@ func cmdDoctor() error {
 		checkExecutable(),
 		checkTarget(st.Claude),
 		checkTarget(st.Codex),
+		checkTarget(st.OpenCode),
 		checkCodexTrust(st.Codex),
 		checkFeishu(cfg),
 		checkBark(cfg),

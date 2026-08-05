@@ -1,13 +1,11 @@
-// 命令 acn（Agent Completion Notification）在 AI CLI（Claude Code / Codex）
+// 命令 acn（Agent Completion Notification）在 AI CLI（Claude Code / Codex / OpenCode）
 // 完成任务时推送通知。
 //
 // 事件流：
 //
-//	Claude Code ──Stop hook──┐
-//	                         ├─→ acn hook ─→ 飞书
-//	Codex ───────Stop hook───┘
-//
-// 两者用的是同一套 Stop hook 契约，载荷都从 stdin 进来。
+//	Claude Code ──Stop hook────┐
+//	Codex ───────Stop hook─────┼─→ acn hook ─→ 通知渠道
+//	OpenCode ────session.idle──┘
 package main
 
 import (
@@ -38,7 +36,7 @@ const usage = `acn (Agent Completion Notification) — Agent 任务完成通知
   acn config wecom-url https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=your_key
   acn config slack-url https://hooks.slack.com/services/your/webhook
   acn config teams-url https://your-teams-webhook-url
-  # 2.安装 hooks 到 Claude Code 和 Codex
+  # 2.安装 hooks 到 Claude Code、Codex 和 OpenCode
   acn install
   # 3.自检
   acn doctor
@@ -53,11 +51,13 @@ const usage = `acn (Agent Completion Notification) — Agent 任务完成通知
   acn config <k> <v>     修改配置项
   acn hook claude        Claude Code 的 Stop hook 入口（读 stdin）
   acn hook codex         Codex 的 Stop hook 入口（读 stdin）
+  acn hook opencode      OpenCode 的 session.idle 插件入口（读 stdin）
   acn version            打印版本
 
-目标（install / uninstall，省略则两个都做）：
+目标（install / uninstall，省略则全部都做）：
   claude                 仅 Claude Code
   codex                  仅 Codex
+  opencode               仅 OpenCode
 
 配置项（acn config）：
   bark-url <url|off>     配置并启用 Bark；off 仅关闭渠道
@@ -92,8 +92,10 @@ const usage = `acn (Agent Completion Notification) — Agent 任务完成通知
   show-project-name <on|off> 标题是否显示项目名（默认 off）
   claude-agent-name <名称|default> Claude Agent 名（默认 claude）
   codex-agent-name <名称|default>  Codex Agent 名（默认 Codex）
+  opencode-agent-name <名称|default> OpenCode Agent 名（默认 OpenCode）
   claude <on|off>        是否推送 Claude Code
   codex <on|off>         是否推送 Codex
+  opencode <on|off>      是否推送 OpenCode
 `
 
 func main() {
@@ -144,7 +146,7 @@ func run(args []string) error {
 // 通知失败远不如打断工作流严重，因此一切诊断信息只走 stderr。
 func cmdHook(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("用法：acn hook <claude|codex>")
+		return fmt.Errorf("用法：acn hook <claude|codex|opencode>")
 	}
 
 	ev, err := buildHookEvent(args[0], os.Stdin)
@@ -189,6 +191,7 @@ func cmdInstall(targets []string) error {
 	st, installErr := install.Install(exe, targets...)
 	printTarget(st.Claude)
 	printTarget(st.Codex)
+	printTarget(st.OpenCode)
 	if installErr != nil {
 		return installErr
 	}
@@ -206,7 +209,7 @@ func cmdInstall(targets []string) error {
 		fmt.Println("  Slack：acn config slack-url <Incoming Webhook 地址>")
 		fmt.Println("  Teams：acn config teams-url <Incoming Webhook 地址>")
 	}
-	fmt.Println("提示：两个 CLI 均需重启后生效；装好后可用 acn doctor 自检")
+	fmt.Println("提示：AI CLI 需重启后生效；装好后可用 acn doctor 自检")
 	return nil
 }
 
@@ -217,6 +220,7 @@ func cmdUninstall(targets []string) error {
 	st, err := install.Uninstall(targets...)
 	printTarget(st.Claude)
 	printTarget(st.Codex)
+	printTarget(st.OpenCode)
 	return err
 }
 
@@ -230,6 +234,7 @@ func cmdStatus() error {
 	st := install.Query()
 	printTarget(st.Claude)
 	printTarget(st.Codex)
+	printTarget(st.OpenCode)
 
 	fmt.Println("\n配置（" + config.Path() + "）：")
 	fmt.Println("  " + mark(cfg.ChannelEnabled(config.ChannelFeishu) && cfg.FeishuReady()) + " 飞书 webhook：" + describeWebhook(cfg))
@@ -249,8 +254,9 @@ func cmdStatus() error {
 	fmt.Printf("  · 标题字段：device-name=%s agent-name=%s project-name=%s\n",
 		onOff(cfg.ShowDeviceName), onOff(cfg.ShowAgentName), onOff(cfg.ShowProjectName))
 	fmt.Println("  · 设备名称：" + cfg.EffectiveDeviceName())
-	fmt.Printf("  · Agent 名称：claude=%s codex=%s\n",
-		cfg.EffectiveAgentName(event.SourceClaude), cfg.EffectiveAgentName(event.SourceCodex))
+	fmt.Printf("  · Agent 名称：claude=%s codex=%s opencode=%s\n",
+		cfg.EffectiveAgentName(event.SourceClaude), cfg.EffectiveAgentName(event.SourceCodex),
+		cfg.EffectiveAgentName(event.SourceOpenCode))
 	fmt.Printf("  · Bark 点击跳转：claude=%s codex=%s\n",
 		onOff(cfg.Bark.SourceURL(event.SourceClaude) != ""),
 		onOff(cfg.Bark.SourceURL(event.SourceCodex) != ""))
@@ -278,8 +284,9 @@ func cmdStatus() error {
 			}
 		}
 	}
-	fmt.Printf("  · 来源开关：claude=%s codex=%s\n",
-		onOff(cfg.SourceEnabled(event.SourceClaude)), onOff(cfg.SourceEnabled(event.SourceCodex)))
+	fmt.Printf("  · 来源开关：claude=%s codex=%s opencode=%s\n",
+		onOff(cfg.SourceEnabled(event.SourceClaude)), onOff(cfg.SourceEnabled(event.SourceCodex)),
+		onOff(cfg.SourceEnabled(event.SourceOpenCode)))
 
 	return nil
 }
@@ -462,7 +469,7 @@ func cmdConfig(args []string) error {
 		case "show-project-name":
 			cfg.ShowProjectName = on
 		}
-	case "claude-agent-name", "codex-agent-name":
+	case "claude-agent-name", "codex-agent-name", "opencode-agent-name":
 		source := strings.TrimSuffix(key, "-agent-name")
 		if cfg.AgentNames == nil {
 			cfg.AgentNames = map[string]string{}
@@ -476,7 +483,7 @@ func cmdConfig(args []string) error {
 			cfg.AgentNames[source] = value
 		}
 		cfg.ShowAgentName = true
-	case "claude", "codex":
+	case "claude", "codex", "opencode":
 		on, err := parseBool(value)
 		if err != nil {
 			return err

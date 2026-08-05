@@ -1,9 +1,9 @@
 # acn（Agent Completion Notification）
 
-推送 Agent (Claude code、Codex）完成通知到 Bark、飞书、钉钉、企微、Slack、Teams、TG等。
-原生 Stop hook 接入，单文件极小体积，一行命令即可安装，无常驻进程，无 GUI。
+推送 Agent（Claude Code、Codex、OpenCode）完成通知到 Bark、飞书、钉钉、企微、Slack、Teams、TG 等。
+通过原生 hook / plugin 接入，单文件极小体积，一行命令即可安装，无常驻进程，无 GUI。
 
-![acn 接收 Claude Code 和 Codex 完成事件并分发到多种通知渠道](assets/acn-flow.png)
+![acn 接收 Agent 完成事件并分发到多种通知渠道](assets/acn-flow.png)
 
 
 ## 快速接入
@@ -55,7 +55,7 @@ acn config dingtalk-url https://oapi.dingtalk.com/robot/send?access_token=your_k
 acn config wecom-url https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=your_key
 acn config slack-url https://hooks.slack.com/services/your/webhook
 acn config teams-url https://your-teams-webhook-url
-# 安装 hooks 到 Claude Code 和 Codex
+# 安装 hooks 到 Claude Code、Codex 和 OpenCode
 acn install
 # 自检
 acn doctor                          
@@ -65,8 +65,8 @@ acn doctor
 ## 命令
 
 ```
-acn install [claude|codex]     接入 AI CLI，省略目标则两个都装
-acn uninstall [claude|codex]   移除接入
+acn install [claude|codex|opencode]   接入 AI CLI，省略目标则全部安装
+acn uninstall [claude|codex|opencode] 移除接入
 acn status                     查看接入状态与配置
 acn doctor                     自检整条链路，并实际推送一条通知
 acn update [--check]           更新到最新正式版；--check 仅检查
@@ -82,6 +82,7 @@ acn config <k> <v>             修改配置
 ✓ Claude Code    hook 已安装 → /opt/homebrew/bin/acn
 ✓ Codex          hook 已安装 → /opt/homebrew/bin/acn
 ✓ Codex 信任     已信任当前 ACN hook
+✓ OpenCode       hook 已安装 → /opt/homebrew/bin/acn
 ✓ 飞书 webhook   https://open.feishu.cn/…/xxxx…xxxx
 ? Bark endpoint  未配置（可选）
 ✓ 实际推送       已发出，请确认已配置渠道是否收到
@@ -131,20 +132,23 @@ acn config show-agent-name <on|off>    是否显示 Agent 名，默认 off
 acn config show-project-name <on|off>  是否显示项目名，默认 off
 acn config claude-agent-name <名称|default>  Claude Agent 名，默认 claude
 acn config codex-agent-name <名称|default>   Codex Agent 名，默认 Codex
+acn config opencode-agent-name <名称|default> OpenCode Agent 名，默认 OpenCode
 
 
 acn config claude <on|off>      是否推送 Claude Code
 acn config codex <on|off>       是否推送 Codex
+acn config opencode <on|off>    是否推送 OpenCode
 ```
 
 通知标题默认直接使用会话名，例如 `完善组件消融实验方案`。Claude Code 从 transcript
 中的 `ai-title` 记录读取；Codex 用 hook 的 `session_id` 查询
-`$CODEX_HOME/session_index.jsonl`（默认 `~/.codex/session_index.jsonl`）。取不到会话名时
+`$CODEX_HOME/session_index.jsonl`（默认 `~/.codex/session_index.jsonl`）；OpenCode 由插件
+在 `session.idle` 时读取会话标题和最后一条 assistant 消息。取不到会话名时
 使用已开启的设备、Agent、项目名前缀；所有前缀均关闭时显示 `任务完成`，避免旧版本
 或临时会话产生空标题。
 
 设备名、Agent 名和项目名默认均不参与标题，但原有配置仍然保留。显式开启后会作为
-会话名前缀，例如 `MacBookPro-Codex-acn-完善组件消融实验方案`。两个 Agent 名均可
+会话名前缀，例如 `MacBookPro-Codex-acn-完善组件消融实验方案`。三个 Agent 名均可
 独立配置，传入 `default` 可恢复各自的默认名称；设置 Agent 名会自动打开 Agent 名显示。
 
 Bark URL 使用 App 复制出的设备端点并截到 key，例如 `https://api.day.app/your_key`；
@@ -156,6 +160,11 @@ Bark URL 使用 App 复制出的设备端点并截到 key，例如 `https://api.
 默认使用事件的会话 ID 作为 Bark 字符串 `id`，同一会话的后续完成通知会更新原通知，
 不同会话分别保留；可通过 `bark-update-by-session off` 关闭。此功能需要 Bark
 v1.5.2、bark-server v2.2.5 或更高版本。
+
+OpenCode 接入文件位于 `~/.config/opencode/plugins/acn.js`（Windows 同样位于用户目录下的
+`.config/opencode/plugins`）。`acn install opencode` 会幂等更新该文件，
+`acn uninstall opencode` 只删除 ACN 自己生成的插件；安装或卸载后需重启 OpenCode。
+
 已配置且启用的
 渠道会并发发送，一个渠道失败不会阻止另一个渠道尝试，错误信息会注明失败渠道。
 通知中的回复原文默认最多保留 1000 个字符，可通过 `max-message-length` 修改；

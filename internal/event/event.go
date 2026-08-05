@@ -13,8 +13,9 @@ import (
 )
 
 const (
-	SourceClaude = "claude"
-	SourceCodex  = "codex"
+	SourceClaude   = "claude"
+	SourceCodex    = "codex"
+	SourceOpenCode = "opencode"
 )
 
 // DefaultMaxMessageLength 是推送正文中回复原文的默认最大字符数。
@@ -56,6 +57,8 @@ func (e Event) DisplayAgentName() string {
 		return "claude"
 	case SourceCodex:
 		return "Codex"
+	case SourceOpenCode:
+		return "OpenCode"
 	default:
 		return strings.TrimSpace(e.Source)
 	}

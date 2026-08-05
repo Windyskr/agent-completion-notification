@@ -1,7 +1,7 @@
-// Package install 负责把 acn 挂到 Claude Code 与 Codex 的原生回调上，
+// Package install 负责把 acn 挂到 Claude Code、Codex 与 OpenCode 的完成回调上，
 // 以及安全地摘除。
 //
-// 两处配置都属于用户既有文件，改写遵循三条原则：
+// 各处配置都属于用户既有文件，改写遵循三条原则：
 //  1. 写入前备份；
 //  2. 只增删 acn 自己的条目，其余内容原样保留；
 //  3. 幂等——重复安装不会产生重复条目。
@@ -39,23 +39,25 @@ type TargetStatus struct {
 
 // Status 汇总全部集成点。
 type Status struct {
-	Claude TargetStatus
-	Codex  TargetStatus
+	Claude   TargetStatus
+	Codex    TargetStatus
+	OpenCode TargetStatus
 }
 
 // 可选的集成点名称。与 acn hook 的来源名、配置里的来源开关保持一致。
 const (
-	TargetClaude = "claude"
-	TargetCodex  = "codex"
+	TargetClaude   = "claude"
+	TargetCodex    = "codex"
+	TargetOpenCode = "opencode"
 )
 
 // Targets 返回全部集成点名称。
-func Targets() []string { return []string{TargetClaude, TargetCodex} }
+func Targets() []string { return []string{TargetClaude, TargetCodex, TargetOpenCode} }
 
 // ValidateTargets 校验用户给的目标名；空切片视为全部。
 func ValidateTargets(targets []string) error {
 	for _, t := range targets {
-		if t != TargetClaude && t != TargetCodex {
+		if t != TargetClaude && t != TargetCodex && t != TargetOpenCode {
 			return fmt.Errorf("未知目标 %q，可选：%s", t, strings.Join(Targets(), " / "))
 		}
 	}
@@ -76,7 +78,7 @@ func selected(targets []string, name string) bool {
 }
 
 // Install 安装指定集成点，targets 为空表示全部。任一失败都返回错误，但不回滚
-// 另一处已成功的改动——二者相互独立，且都能单独摘除。
+// 其他已成功的改动——各集成点相互独立，且都能单独摘除。
 func Install(exe string, targets ...string) (Status, error) {
 	var errs []string
 
@@ -88,6 +90,11 @@ func Install(exe string, targets ...string) (Status, error) {
 	if selected(targets, TargetCodex) {
 		if err := installCodex(exe); err != nil {
 			errs = append(errs, "Codex: "+err.Error())
+		}
+	}
+	if selected(targets, TargetOpenCode) {
+		if err := installOpenCode(exe); err != nil {
+			errs = append(errs, "OpenCode: "+err.Error())
 		}
 	}
 
@@ -112,6 +119,11 @@ func Uninstall(targets ...string) (Status, error) {
 			errs = append(errs, "Codex: "+err.Error())
 		}
 	}
+	if selected(targets, TargetOpenCode) {
+		if err := uninstallOpenCode(); err != nil {
+			errs = append(errs, "OpenCode: "+err.Error())
+		}
+	}
 
 	st := Query()
 	if len(errs) > 0 {
@@ -123,8 +135,9 @@ func Uninstall(targets ...string) (Status, error) {
 // Query 探测当前安装状态，不做任何修改。
 func Query() Status {
 	return Status{
-		Claude: queryClaude(),
-		Codex:  queryCodex(),
+		Claude:   queryClaude(),
+		Codex:    queryCodex(),
+		OpenCode: queryOpenCode(),
 	}
 }
 
