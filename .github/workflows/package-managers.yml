@@ -253,7 +253,7 @@ jobs:
 
           content.sub!(url_pattern, %(  url "https://github.com/windyskr/agent-completion-notification/archive/refs/tags/#{tag}.tar.gz"))
           content.sub!(sha_pattern, %(  sha256 "#{source_hash}"))
-          content.sub!(/\n  bottle do\n.*?^  end\n/m, "\n")
+          content.sub!(/\n  bottle do\n.*?^  end\n\n/m, "\n")
           File.write(path, content)
           RUBY
 
