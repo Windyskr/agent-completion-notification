@@ -251,3 +251,98 @@ func TestInstallClaudeWritesBackup(t *testing.T) {
 		t.Errorf("备份内容有误: %s", data)
 	}
 }
+
+// 安装要同时挂上完成与等待介入三类事件；等待介入条目必须 async，
+// PreToolUse 必须带 AskUserQuestion matcher。
+func TestInstallClaudeWritesAttentionHooks(t *testing.T) {
+	home := withHome(t)
+	path := writeSettings(t, home, `{}`)
+
+	if err := installClaude("/usr/local/bin/acn"); err != nil {
+		t.Fatal(err)
+	}
+
+	got := readSettings(t, path)
+	hooks := got["hooks"].(map[string]any)
+
+	stop, _ := json.Marshal(hooks["Stop"])
+	if !strings.Contains(string(stop), "hook claude\"") || strings.Contains(string(stop), "async") {
+		t.Errorf("Stop 应为同步的 hook claude:\n%s", stop)
+	}
+
+	ptu, _ := json.Marshal(hooks["PreToolUse"])
+	for _, want := range []string{`"matcher":"AskUserQuestion"`, `hook claude-question`, `"async":true`} {
+		if !strings.Contains(string(ptu), want) {
+			t.Errorf("PreToolUse 缺少 %s:\n%s", want, ptu)
+		}
+	}
+
+	notif, _ := json.Marshal(hooks["Notification"])
+	for _, want := range []string{"hook claude-notification", `"async":true`} {
+		if !strings.Contains(string(notif), want) {
+			t.Errorf("Notification 缺少 %s:\n%s", want, notif)
+		}
+	}
+	if strings.Contains(string(notif), `"matcher"`) {
+		t.Errorf("Notification 不应带 matcher:\n%s", notif)
+	}
+	if !queryClaude().Installed {
+		t.Error("安装后状态仍为未安装")
+	}
+	if detail := queryClaude().Detail; detail != "完成/选择/通知 hook 已安装" {
+		t.Errorf("detail = %q", detail)
+	}
+}
+
+// 卸载要把三类事件上的 acn 条目全部摘掉，用户自己的 Notification hook 保留。
+func TestUninstallClaudeRemovesAllEvents(t *testing.T) {
+	home := withHome(t)
+	path := writeSettings(t, home, `{
+  "hooks": {
+    "Notification": [{"hooks": [{"type": "command", "command": "/my/notify"}]}]
+  }
+}`)
+
+	if err := installClaude("/usr/local/bin/acn"); err != nil {
+		t.Fatal(err)
+	}
+	if err := uninstallClaude(); err != nil {
+		t.Fatal(err)
+	}
+
+	data, _ := os.ReadFile(path)
+	text := string(data)
+	for _, leftover := range []string{"hook claude", "hook claude-question", "hook claude-notification"} {
+		if strings.Contains(text, leftover) {
+			t.Errorf("卸载后仍残留 %s:\n%s", leftover, text)
+		}
+	}
+	if !strings.Contains(text, "/my/notify") {
+		t.Errorf("用户的 Notification hook 被删掉了:\n%s", text)
+	}
+	if queryClaude().Installed {
+		t.Error("卸载后状态仍为已安装")
+	}
+}
+
+// 只装了等待介入事件（如旧版本升级前手动清理过 Stop）时，状态与路径仍可识别。
+func TestQueryClaudeReportsPartialInstall(t *testing.T) {
+	home := withHome(t)
+	writeSettings(t, home, `{
+  "hooks": {
+    "PreToolUse": [{"matcher": "AskUserQuestion", "hooks": [
+      {"type": "command", "command": "'/opt/acn' hook claude-question", "async": true}
+    ]}]
+  }
+}`)
+	st := queryClaude()
+	if !st.Installed {
+		t.Fatal("部分安装应识别为已安装")
+	}
+	if st.Detail != "选择 hook 已安装" {
+		t.Errorf("detail = %q", st.Detail)
+	}
+	if st.Exe != "/opt/acn" {
+		t.Errorf("Exe = %q, 期望 /opt/acn", st.Exe)
+	}
+}

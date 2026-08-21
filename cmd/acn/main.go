@@ -50,6 +50,8 @@ const usage = `acn (Agent Completion Notification) — Agent 任务完成通知
   acn update [--check]   更新到最新正式版；--check 仅检查
   acn config <k> <v>     修改配置项
   acn hook claude        Claude Code 的 Stop hook 入口（读 stdin）
+  acn hook claude-question      Claude Code 等待选择（AskUserQuestion）入口
+  acn hook claude-notification  Claude Code 通知（权限审批/空闲）入口
   acn hook codex         Codex 的 Stop hook 入口（读 stdin）
   acn hook opencode      OpenCode 的 session.idle 插件入口（读 stdin）
   acn version            打印版本
@@ -96,6 +98,8 @@ const usage = `acn (Agent Completion Notification) — Agent 任务完成通知
   claude <on|off>        是否推送 Claude Code
   codex <on|off>         是否推送 Codex
   opencode <on|off>      是否推送 OpenCode
+  claude-attention <on|off>     Claude 等待选择/权限审批时推送，默认 on
+  claude-idle-reminder <on|off> Claude 回合结束 60 秒无输入时推送，默认 off
 `
 
 func main() {
@@ -137,7 +141,7 @@ func run(args []string) error {
 	}
 }
 
-// cmdHook 处理来自 AI CLI 的 Stop 回调。
+// cmdHook 处理来自 AI CLI 的回调。
 //
 // 无论内部发生什么都返回 nil，且**绝不往 stdout 写任何东西**：
 //   - 非零退出码会在用户终端里显示报错；
@@ -146,12 +150,15 @@ func run(args []string) error {
 // 通知失败远不如打断工作流严重，因此一切诊断信息只走 stderr。
 func cmdHook(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("用法：acn hook <claude|codex|opencode>")
+		return fmt.Errorf("用法：acn hook <claude|claude-question|claude-notification|codex|opencode>")
 	}
 
-	ev, err := buildHookEvent(args[0], os.Stdin)
+	ev, skip, err := buildHookEvent(args[0], os.Stdin)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "acn hook: "+err.Error())
+		return nil
+	}
+	if skip {
 		return nil
 	}
 	deliver(ev)
@@ -287,6 +294,8 @@ func cmdStatus() error {
 	fmt.Printf("  · 来源开关：claude=%s codex=%s opencode=%s\n",
 		onOff(cfg.SourceEnabled(event.SourceClaude)), onOff(cfg.SourceEnabled(event.SourceCodex)),
 		onOff(cfg.SourceEnabled(event.SourceOpenCode)))
+	fmt.Printf("  · Claude 等待介入：选择/权限=%s 空闲提醒=%s\n",
+		onOff(cfg.ClaudeAttentionEnabled()), onOff(cfg.ClaudeIdleReminderEnabled()))
 
 	return nil
 }
@@ -492,6 +501,18 @@ func cmdConfig(args []string) error {
 			cfg.Sources = map[string]bool{}
 		}
 		cfg.Sources[key] = on
+	case "claude-attention":
+		on, err := parseBool(value)
+		if err != nil {
+			return err
+		}
+		cfg.ClaudeAttention = &on
+	case "claude-idle-reminder":
+		on, err := parseBool(value)
+		if err != nil {
+			return err
+		}
+		cfg.ClaudeIdleReminder = on
 	default:
 		return fmt.Errorf("未知配置项 %q，运行 acn help 查看全部配置项", key)
 	}

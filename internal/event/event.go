@@ -18,6 +18,15 @@ const (
 	SourceOpenCode = "opencode"
 )
 
+// 事件类别。空值与 KindCompletion 均表示任务完成；其余三类是 Claude Code
+// 的「等待用户介入」事件——回合还没结束，但需要人回来做决策。
+const (
+	KindCompletion = ""
+	KindChoice     = "choice"     // Claude 通过 AskUserQuestion 等待选择
+	KindPermission = "permission" // Claude 等待工具权限审批
+	KindIdle       = "idle"       // 回合结束后长时间无输入
+)
+
 // DefaultMaxMessageLength 是推送正文中回复原文的默认最大字符数。
 const DefaultMaxMessageLength = 1000
 
@@ -38,8 +47,24 @@ type Event struct {
 	SessionName     string `json:"session_name,omitempty"`
 	// DurationMS 为 0 表示来源未提供耗时（Codex 的 notify 回调只有结束时刻，
 	// 没有本轮起点）。此时耗时阈值不参与判断。
-	DurationMS       int64 `json:"duration_ms"`
+	DurationMS int64 `json:"duration_ms"`
+	// Kind 区分事件类别；空值表示任务完成。
+	Kind             string `json:"kind,omitempty"`
 	maxMessageLength *int
+}
+
+// AwaitingLabel 返回等待介入事件在通知标题中的类别词；任务完成返回空串。
+func (e Event) AwaitingLabel() string {
+	switch e.Kind {
+	case KindChoice:
+		return "等待选择"
+	case KindPermission:
+		return "权限确认"
+	case KindIdle:
+		return "空闲等待"
+	default:
+		return ""
+	}
 }
 
 // SetMaxMessageLength 设置回复原文的最大字符数；0 表示不截断。
@@ -104,9 +129,13 @@ func (e Event) Title() string {
 
 // Body 组装推送正文。渠道只负责传输，不再各自拼文案。
 func (e Event) Body(now time.Time) string {
-	details := []string{"完成时间：" + now.Format("2006-01-02 15:04:05")}
-	if d := FormatDuration(e.DurationMS); d != "" {
-		details = append(details, "耗时："+d)
+	var details []string
+	// 等待介入事件发生在回合中间，「完成时间」「耗时」都不成立，只保留目录。
+	if e.Kind == KindCompletion {
+		details = append(details, "完成时间："+now.Format("2006-01-02 15:04:05"))
+		if d := FormatDuration(e.DurationMS); d != "" {
+			details = append(details, "耗时："+d)
+		}
 	}
 	if cwd := strings.TrimSpace(e.Cwd); cwd != "" {
 		details = append(details, "目录："+cwd)

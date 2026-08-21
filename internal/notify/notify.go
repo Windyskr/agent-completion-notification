@@ -40,6 +40,18 @@ func Gate(cfg config.Config, ev event.Event) string {
 	if directory, ok := cfg.IgnoredDirectory(ev.Cwd); ok {
 		return "目录已忽略：" + directory
 	}
+	// 等待介入事件有独立开关：选择与权限默认开，60 秒空闲提醒默认关。
+	// 它们发生在回合中间，来源关闭（如 claude off）时同样不推。
+	switch ev.Kind {
+	case event.KindChoice, event.KindPermission:
+		if !cfg.ClaudeAttentionEnabled() {
+			return "等待介入推送已关闭（claude-attention off）"
+		}
+	case event.KindIdle:
+		if !cfg.ClaudeIdleReminderEnabled() {
+			return "空闲提醒已关闭（claude-idle-reminder off）"
+		}
+	}
 	// 耗时未知时不套用阈值，否则会把取不到起点的通知全部挡掉。
 	if cfg.MinDurationSeconds > 0 && ev.DurationMS > 0 {
 		if ev.DurationMS < int64(cfg.MinDurationSeconds)*1000 {

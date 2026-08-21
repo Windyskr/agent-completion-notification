@@ -125,6 +125,22 @@ type Config struct {
 	MaxMessageLength int `json:"max_message_length"`
 	// IgnoredDirectories 中的目录及其子目录不推送通知。
 	IgnoredDirectories []string `json:"ignored_directories,omitempty"`
+	// ClaudeAttention 控制 Claude Code 等待介入事件（AskUserQuestion 选择、
+	// 权限审批）的推送。指针三态：nil 表示未配置，按默认开启处理。
+	ClaudeAttention *bool `json:"claude_attention,omitempty"`
+	// ClaudeIdleReminder 控制 Claude Code 回合结束 60 秒无输入的空闲提醒。
+	// 与完成推送高度重叠，默认关闭，避免每段空闲都补一枪。
+	ClaudeIdleReminder bool `json:"claude_idle_reminder"`
+}
+
+// ClaudeAttentionEnabled 判断等待介入推送是否开启，未配置视为开启。
+func (c Config) ClaudeAttentionEnabled() bool {
+	return c.ClaudeAttention == nil || *c.ClaudeAttention
+}
+
+// ClaudeIdleReminderEnabled 判断空闲提醒是否开启，默认关闭。
+func (c Config) ClaudeIdleReminderEnabled() bool {
+	return c.ClaudeIdleReminder
 }
 
 // Default 返回未落盘时的默认配置。

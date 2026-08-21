@@ -150,6 +150,8 @@ acn config opencode-agent-name <名称|default> OpenCode Agent 名，默认 Open
 acn config claude <on|off>      是否推送 Claude Code
 acn config codex <on|off>       是否推送 Codex
 acn config opencode <on|off>    是否推送 OpenCode
+acn config claude-attention <on|off>     Claude 等待选择/权限审批时推送，默认 on
+acn config claude-idle-reminder <on|off> Claude 回合结束 60 秒无输入时推送，默认 off
 ```
 
 通知标题默认直接使用会话名，例如 `完善组件消融实验方案`。Claude Code 从 transcript
@@ -176,6 +178,16 @@ v1.5.2、bark-server v2.2.5 或更高版本。
 OpenCode 接入文件位于 `~/.config/opencode/plugins/acn.js`（Windows 同样位于用户目录下的
 `.config/opencode/plugins`）。`acn install opencode` 会幂等更新该文件，
 `acn uninstall opencode` 只删除 ACN 自己生成的插件；安装或卸载后需重启 OpenCode。
+
+### Claude Code 等待介入推送
+
+除了任务完成（Stop），acn 还会在 Claude Code 回合中间需要你回来时推送：
+Claude 通过 AskUserQuestion 发起选择时，推送问题文本与全部选项；等待工具权限
+审批时，推送审批提示。两者默认开启，`acn config claude-attention off` 可关闭。
+回合结束 60 秒无输入的空闲提醒与完成推送高度重叠，默认关闭，需要时用
+`acn config claude-idle-reminder on` 打开。这些 hook 以 async 方式挂载，
+不会阻塞对话；`ignore-dir` 规则同样适用于等待介入推送。Codex 与 OpenCode
+没有对应机制，此功能仅覆盖 Claude Code。
 
 已配置且启用的
 渠道会并发发送，一个渠道失败不会阻止另一个渠道尝试，错误信息会注明失败渠道。

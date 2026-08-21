@@ -41,15 +41,64 @@ type StopPayload struct {
 
 // ReadStop 从 stdin 读取并解析 Stop 载荷。
 func ReadStop(r io.Reader) (StopPayload, error) {
-	raw, err := io.ReadAll(io.LimitReader(r, maxStdin))
-	if err != nil {
-		return StopPayload{}, fmt.Errorf("读取 stdin 失败: %w", err)
-	}
 	var p StopPayload
-	if err := json.Unmarshal(raw, &p); err != nil {
-		return StopPayload{}, fmt.Errorf("解析 Stop 载荷失败: %w", err)
+	if err := readPayload(r, &p); err != nil {
+		return StopPayload{}, err
 	}
 	return p, nil
+}
+
+// PreToolUsePayload 是工具调用执行前经 stdin 传入的载荷。acn 只挂
+// AskUserQuestion 一个 matcher，用于捕获「Claude 正在等待用户选择」的时刻。
+type PreToolUsePayload struct {
+	SessionID      string          `json:"session_id"`
+	TranscriptPath string          `json:"transcript_path"`
+	Cwd            string          `json:"cwd"`
+	HookEventName  string          `json:"hook_event_name"`
+	ToolName       string          `json:"tool_name"`
+	ToolInput      json.RawMessage `json:"tool_input"`
+}
+
+// ReadPreToolUse 从 stdin 读取并解析 PreToolUse 载荷。
+func ReadPreToolUse(r io.Reader) (PreToolUsePayload, error) {
+	var p PreToolUsePayload
+	if err := readPayload(r, &p); err != nil {
+		return PreToolUsePayload{}, err
+	}
+	return p, nil
+}
+
+// NotificationPayload 是 Claude Code 发出通知时经 stdin 传入的载荷。
+// notification_type 区分通知类别（permission_prompt / idle_prompt 等）。
+type NotificationPayload struct {
+	SessionID        string `json:"session_id"`
+	TranscriptPath   string `json:"transcript_path"`
+	Cwd              string `json:"cwd"`
+	HookEventName    string `json:"hook_event_name"`
+	Message          string `json:"message"`
+	Title            string `json:"title"`
+	NotificationType string `json:"notification_type"`
+}
+
+// ReadNotification 从 stdin 读取并解析 Notification 载荷。
+func ReadNotification(r io.Reader) (NotificationPayload, error) {
+	var p NotificationPayload
+	if err := readPayload(r, &p); err != nil {
+		return NotificationPayload{}, err
+	}
+	return p, nil
+}
+
+// readPayload 统一读取并解析 stdin 载荷，限制体积避免异常输入撑爆内存。
+func readPayload(r io.Reader, p any) error {
+	raw, err := io.ReadAll(io.LimitReader(r, maxStdin))
+	if err != nil {
+		return fmt.Errorf("读取 stdin 失败: %w", err)
+	}
+	if err := json.Unmarshal(raw, p); err != nil {
+		return fmt.Errorf("解析载荷失败: %w", err)
+	}
+	return nil
 }
 
 // ScanTail 逐行读取 JSONL transcript 的尾部，对每个非空行调用 fn。
