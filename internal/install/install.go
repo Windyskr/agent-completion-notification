@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"unicode"
 	"unicode/utf16"
@@ -147,12 +148,72 @@ func Query() Status {
 // /opt/homebrew/Cellar/acn/<版本>/bin/acn。解析之后写进配置的就是带版本号的
 // 路径，下一次 brew upgrade 换了版本目录，hook 就指向一个不存在的文件并静默失效。
 // 软链本身才是跨版本稳定的那个。
+//
+// macOS 的 os.Executable 返回启动时的路径，软链得以保留；Linux 读的是
+// /proc/self/exe，内核已把软链解析成真实路径，只能从 os.Args[0] 还原调用方
+// 看到的路径。还原结果必须经 SameFile 确认与当前二进制是同一文件——argv
+// 可能被父进程改写，PATH 里也可能有多份同名文件；对不上就退回 os.Executable。
 func Executable() (string, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Abs(exe)
+	exe, err = filepath.Abs(exe)
+	if err != nil {
+		return "", err
+	}
+	if runtime.GOOS != "windows" {
+		if invoked, ok := invokedPath(exe); ok {
+			return invoked, nil
+		}
+	}
+	return exe, nil
+}
+
+// invokedPath 从 os.Args[0] 还原本次启动使用的路径，仅当它确实指向 real 时返回。
+func invokedPath(real string) (string, bool) {
+	if len(os.Args) == 0 || os.Args[0] == "" {
+		return "", false
+	}
+	arg0 := os.Args[0]
+
+	// 带路径分隔符：相对路径按启动时的 cwd 展开；裸命令名则是在 PATH 里
+	// 找到的，逐个目录还原 shell 的查找过程。
+	var candidates []string
+	if strings.ContainsRune(arg0, '/') {
+		abs, err := filepath.Abs(arg0)
+		if err != nil {
+			return "", false
+		}
+		candidates = []string{abs}
+	} else {
+		for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
+			if dir == "" {
+				continue
+			}
+			candidates = append(candidates, filepath.Join(dir, arg0))
+		}
+	}
+
+	for _, candidate := range candidates {
+		if sameFile(candidate, real) {
+			return candidate, true
+		}
+	}
+	return "", false
+}
+
+// sameFile 判断两个路径是否指向同一个文件（跟随软链比较 inode）。
+func sameFile(a, b string) bool {
+	infoA, err := os.Stat(a)
+	if err != nil {
+		return false
+	}
+	infoB, err := os.Stat(b)
+	if err != nil {
+		return false
+	}
+	return os.SameFile(infoA, infoB)
 }
 
 // backup 在改写前留一份副本，文件不存在时视为无需备份。
