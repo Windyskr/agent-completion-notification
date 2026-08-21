@@ -20,6 +20,18 @@ brew install windyskr/tap/acn
 scoop bucket add windyskr https://github.com/Windyskr/scoop-bucket
 scoop install windyskr/acn
 ```
+
+### Linux
+
+从 [GitHub Releases](https://github.com/Windyskr/agent-completion-notification/releases)
+下载对应架构的 `acn_<版本>_linux_amd64.tar.gz`（或 `linux_arm64`），解压后把
+`acn` 放入 `PATH`：
+
+```bash
+curl -sL https://github.com/Windyskr/agent-completion-notification/releases/latest/download/acn_$(curl -s https://api.github.com/repos/Windyskr/agent-completion-notification/releases/latest | grep -o '"tag_name": *"[^"]*"' | cut -d'"' -f4 | tr -d v)_linux_amd64.tar.gz | tar -xz
+sudo install -m 0755 acn /usr/local/bin/acn
+```
+
 <details collapsed>
 <summary>其他安装方法</summary>
 

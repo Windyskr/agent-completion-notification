@@ -132,6 +132,8 @@ func archiveExtension() (string, error) {
 		return ".zip", nil
 	case runtime.GOOS == "darwin" && runtime.GOARCH == "arm64":
 		return ".tar.gz", nil
+	case runtime.GOOS == "linux" && (runtime.GOARCH == "amd64" || runtime.GOARCH == "arm64"):
+		return ".tar.gz", nil
 	default:
 		return "", fmt.Errorf("暂不支持自动更新 %s/%s", runtime.GOOS, runtime.GOARCH)
 	}
