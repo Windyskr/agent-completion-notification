@@ -11,6 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
+	_ "time/tzdata"
 
 	"github.com/windyskr/agent-completion-notification/internal/event"
 )
@@ -123,6 +125,8 @@ type Config struct {
 	MinDurationSeconds int `json:"min_duration_seconds"`
 	// MaxMessageLength 限制通知中的回复原文字符数；0 表示不截断。
 	MaxMessageLength int `json:"max_message_length"`
+	// NotificationTimezone 控制通知正文中时间的时区；留空时使用机器本地时区。
+	NotificationTimezone string `json:"notification_timezone,omitempty"`
 	// IgnoredDirectories 中的目录及其子目录不推送通知。
 	IgnoredDirectories []string `json:"ignored_directories,omitempty"`
 	// ClaudeAttention 控制 Claude Code 等待介入事件（AskUserQuestion 选择、
@@ -364,6 +368,27 @@ func (c Config) EffectiveAgentName(source string) string {
 	default:
 		return strings.TrimSpace(source)
 	}
+}
+
+// NotificationLocation 返回通知正文使用的时区。空值使用机器本地时区。
+func (c Config) NotificationLocation() (*time.Location, error) {
+	name := strings.TrimSpace(c.NotificationTimezone)
+	if name == "" {
+		return time.Local, nil
+	}
+	location, err := time.LoadLocation(name)
+	if err != nil {
+		return nil, fmt.Errorf("无效的通知时区 %q: %w", name, err)
+	}
+	return location, nil
+}
+
+// EffectiveNotificationTimezone 返回适合展示的当前通知时区名称。
+func (c Config) EffectiveNotificationTimezone() string {
+	if name := strings.TrimSpace(c.NotificationTimezone); name != "" {
+		return name
+	}
+	return "local"
 }
 
 func (c *Config) applyEnv() {

@@ -135,6 +135,7 @@ acn config slack <on|off>       是否启用 Slack 渠道
 acn config teams <on|off>       是否启用 Teams 渠道
 acn config min-duration <秒>    低于该耗时不推送，0 为不限
 acn config max-message-length <字符数> 通知正文最大长度，默认 1000，0 为不限
+acn config notification-timezone <时区|local> 通知时间的 IANA 时区，默认使用机器本地时区
 acn config ignore-dir <路径|off> 忽略目录及其子目录；off 清空全部规则
 acn config unignore-dir <路径>  取消忽略目录
 acn config ignore-list          列出当前忽略目录
@@ -153,6 +154,15 @@ acn config opencode <on|off>    是否推送 OpenCode
 acn config claude-attention <on|off>     Claude 等待选择/权限审批时推送，默认 on
 acn config claude-idle-reminder <on|off> Claude 回合结束 60 秒无输入时推送，默认 off
 ```
+
+例如，机器使用日本时区、但希望通知显示上海时间：
+
+```
+acn config notification-timezone Asia/Shanghai
+```
+
+使用 `acn config notification-timezone local` 可恢复为机器本地时区。该配置只影响通知
+正文中的“完成时间”，不会影响任务耗时或 webhook 签名时间戳。
 
 通知标题默认直接使用会话名，例如 `完善组件消融实验方案`。Claude Code 从 transcript
 中的 `ai-title` 记录读取；Codex 用 hook 的 `session_id` 查询

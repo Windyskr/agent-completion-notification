@@ -113,6 +113,20 @@ func TestBodyIncludesKnownDuration(t *testing.T) {
 	}
 }
 
+func TestBodyUsesConfiguredTimezone(t *testing.T) {
+	location, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		t.Fatal(err)
+	}
+	event := Event{Source: SourceCodex}
+	event.SetLocation(location)
+
+	now := time.Date(2026, 7, 26, 15, 4, 5, 0, time.UTC)
+	if got, want := event.Body(now), "完成时间：2026-07-26 23:04:05"; got != want {
+		t.Errorf("配置上海时区后的正文 = %q，期望 %q", got, want)
+	}
+}
+
 func TestBodyWithoutMessageStartsWithDetails(t *testing.T) {
 	now := time.Date(2026, 7, 26, 15, 4, 5, 0, time.UTC)
 	body := Event{Source: SourceClaude, Cwd: "/work/acn"}.Body(now)

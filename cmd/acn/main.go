@@ -85,6 +85,7 @@ const usage = `acn (Agent Completion Notification) — Agent 任务完成通知
   dingtalk|wecom|telegram|email|slack|teams <on|off> 是否启用对应渠道
   min-duration <秒>      低于该耗时不推送，0 为不限
   max-message-length <字符数> 通知正文最大长度，默认 1000，0 为不限
+  notification-timezone <时区|local> 通知时间的 IANA 时区，默认使用机器本地时区
   ignore-dir <路径|off>  忽略目录及其子目录；off 清空全部规则
   unignore-dir <路径>   取消忽略目录
   ignore-list            列出当前忽略目录
@@ -281,6 +282,7 @@ func cmdStatus() error {
 	} else {
 		fmt.Printf("  · 通知正文长度：%d 字符\n", cfg.MaxMessageLength)
 	}
+	fmt.Println("  · 通知时区：" + cfg.EffectiveNotificationTimezone())
 	if len(cfg.IgnoredDirectories) == 0 {
 		fmt.Println("  · 忽略目录：无")
 	} else {
@@ -440,6 +442,15 @@ func cmdConfig(args []string) error {
 			return err
 		}
 		cfg.MaxMessageLength = n
+	case "notification-timezone":
+		if strings.EqualFold(value, "local") || strings.EqualFold(value, "default") {
+			cfg.NotificationTimezone = ""
+		} else {
+			cfg.NotificationTimezone = value
+			if _, err := cfg.NotificationLocation(); err != nil {
+				return err
+			}
+		}
 	case "ignore-dir":
 		if strings.EqualFold(value, "off") {
 			cfg.IgnoredDirectories = nil

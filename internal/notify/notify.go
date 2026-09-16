@@ -79,6 +79,11 @@ func Send(ctx context.Context, cfg config.Config, ev event.Event) (skipped strin
 	ev.HideAgentName = !cfg.ShowAgentName
 	ev.HideProjectName = !cfg.ShowProjectName
 	ev.SetMaxMessageLength(cfg.MaxMessageLength)
+	location, locationErr := cfg.NotificationLocation()
+	if locationErr != nil {
+		return "", locationErr
+	}
+	ev.SetLocation(location)
 
 	ctx, cancel := context.WithTimeout(ctx, SendTimeout)
 	defer cancel()

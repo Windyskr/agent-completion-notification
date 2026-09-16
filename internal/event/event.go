@@ -51,6 +51,7 @@ type Event struct {
 	// Kind 区分事件类别；空值表示任务完成。
 	Kind             string `json:"kind,omitempty"`
 	maxMessageLength *int
+	location         *time.Location
 }
 
 // AwaitingLabel 返回等待介入事件在通知标题中的类别词；任务完成返回空串。
@@ -70,6 +71,11 @@ func (e Event) AwaitingLabel() string {
 // SetMaxMessageLength 设置回复原文的最大字符数；0 表示不截断。
 func (e *Event) SetMaxMessageLength(max int) {
 	e.maxMessageLength = &max
+}
+
+// SetLocation 设置通知正文中时间使用的时区。
+func (e *Event) SetLocation(location *time.Location) {
+	e.location = location
 }
 
 // DisplayAgentName 返回适合放进连字符标题前缀的 Agent 名。
@@ -132,6 +138,9 @@ func (e Event) Body(now time.Time) string {
 	var details []string
 	// 等待介入事件发生在回合中间，「完成时间」「耗时」都不成立，只保留目录。
 	if e.Kind == KindCompletion {
+		if e.location != nil {
+			now = now.In(e.location)
+		}
 		details = append(details, "完成时间："+now.Format("2006-01-02 15:04:05"))
 		if d := FormatDuration(e.DurationMS); d != "" {
 			details = append(details, "耗时："+d)
