@@ -1,5 +1,7 @@
 # acn（Agent Completion Notification）
 
+[English](README.en.md)
+
 推送 Agent（Claude Code、Codex、OpenCode）完成通知到 Bark、飞书、钉钉、企微、Slack、Teams、TG 等。
 通过原生 hook / plugin 接入，单文件极小体积，一行命令即可安装，无常驻进程，无 GUI。
 
