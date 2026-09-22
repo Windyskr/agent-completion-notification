@@ -25,6 +25,7 @@ const (
 	KindChoice     = "choice"     // Claude 通过 AskUserQuestion 等待选择
 	KindPermission = "permission" // Claude 等待工具权限审批
 	KindIdle       = "idle"       // 回合结束后长时间无输入
+	KindFailure    = "failure"    // Claude 因 API 错误终止回合
 )
 
 // DefaultMaxMessageLength 是推送正文中回复原文的默认最大字符数。
@@ -136,7 +137,7 @@ func (e Event) Title() string {
 // Body 组装推送正文。渠道只负责传输，不再各自拼文案。
 func (e Event) Body(now time.Time) string {
 	var details []string
-	// 等待介入事件发生在回合中间，「完成时间」「耗时」都不成立，只保留目录。
+	// 等待介入事件发生在回合中间，不显示完成时间与耗时。
 	if e.Kind == KindCompletion {
 		if e.location != nil {
 			now = now.In(e.location)
@@ -145,6 +146,11 @@ func (e Event) Body(now time.Time) string {
 		if d := FormatDuration(e.DurationMS); d != "" {
 			details = append(details, "耗时："+d)
 		}
+	} else if e.Kind == KindFailure {
+		if e.location != nil {
+			now = now.In(e.location)
+		}
+		details = append(details, "发生时间："+now.Format("2006-01-02 15:04:05"))
 	}
 	if cwd := strings.TrimSpace(e.Cwd); cwd != "" {
 		details = append(details, "目录："+cwd)

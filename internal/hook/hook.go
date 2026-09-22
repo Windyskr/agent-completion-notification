@@ -89,6 +89,48 @@ func ReadNotification(r io.Reader) (NotificationPayload, error) {
 	return p, nil
 }
 
+// StopFailurePayload 是 Claude Code 因 API 错误结束回合时经 stdin 传入的载荷。
+type StopFailurePayload struct {
+	SessionID            string `json:"session_id"`
+	TranscriptPath       string `json:"transcript_path"`
+	Cwd                  string `json:"cwd"`
+	HookEventName        string `json:"hook_event_name"`
+	Error                string `json:"error"`
+	ErrorDetails         string `json:"error_details"`
+	LastAssistantMessage string `json:"last_assistant_message"`
+}
+
+// ReadStopFailure 从 stdin 读取并解析 Claude Code StopFailure 载荷。
+func ReadStopFailure(r io.Reader) (StopFailurePayload, error) {
+	var p StopFailurePayload
+	if err := readPayload(r, &p); err != nil {
+		return StopFailurePayload{}, err
+	}
+	return p, nil
+}
+
+// PermissionRequestPayload 是 Codex 请求工具权限时经 stdin 传入的载荷。
+// ToolInput 的具体结构取决于工具类型，因此保留为原始 JSON，由来源适配层提取
+// 适合展示给用户的审批原因或命令摘要。
+type PermissionRequestPayload struct {
+	SessionID      string          `json:"session_id"`
+	TranscriptPath string          `json:"transcript_path"`
+	Cwd            string          `json:"cwd"`
+	HookEventName  string          `json:"hook_event_name"`
+	TurnID         string          `json:"turn_id"`
+	ToolName       string          `json:"tool_name"`
+	ToolInput      json.RawMessage `json:"tool_input"`
+}
+
+// ReadPermissionRequest 从 stdin 读取并解析 Codex PermissionRequest 载荷。
+func ReadPermissionRequest(r io.Reader) (PermissionRequestPayload, error) {
+	var p PermissionRequestPayload
+	if err := readPayload(r, &p); err != nil {
+		return PermissionRequestPayload{}, err
+	}
+	return p, nil
+}
+
 // readPayload 统一读取并解析 stdin 载荷，限制体积避免异常输入撑爆内存。
 func readPayload(r io.Reader, p any) error {
 	raw, err := io.ReadAll(io.LimitReader(r, maxStdin))

@@ -135,6 +135,12 @@ type Config struct {
 	// ClaudeIdleReminder 控制 Claude Code 回合结束 60 秒无输入的空闲提醒。
 	// 与完成推送高度重叠，默认关闭，避免每段空闲都补一枪。
 	ClaudeIdleReminder bool `json:"claude_idle_reminder"`
+	// ClaudeFailureAlert 控制 Claude Code 因 API 错误终止回合时的推送。指针三态：
+	// nil 表示未配置，按默认开启处理。
+	ClaudeFailureAlert *bool `json:"claude_failure_alert,omitempty"`
+	// CodexAttention 控制 Codex 请求工具权限时的推送。指针三态：nil 表示
+	// 未配置，按默认开启处理。
+	CodexAttention *bool `json:"codex_attention,omitempty"`
 }
 
 // ClaudeAttentionEnabled 判断等待介入推送是否开启，未配置视为开启。
@@ -145,6 +151,16 @@ func (c Config) ClaudeAttentionEnabled() bool {
 // ClaudeIdleReminderEnabled 判断空闲提醒是否开启，默认关闭。
 func (c Config) ClaudeIdleReminderEnabled() bool {
 	return c.ClaudeIdleReminder
+}
+
+// ClaudeFailureAlertEnabled 判断 Claude 异常终止推送是否开启，未配置视为开启。
+func (c Config) ClaudeFailureAlertEnabled() bool {
+	return c.ClaudeFailureAlert == nil || *c.ClaudeFailureAlert
+}
+
+// CodexAttentionEnabled 判断 Codex 权限确认推送是否开启，未配置视为开启。
+func (c Config) CodexAttentionEnabled() bool {
+	return c.CodexAttention == nil || *c.CodexAttention
 }
 
 // Default 返回未落盘时的默认配置。

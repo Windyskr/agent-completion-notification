@@ -139,6 +139,8 @@ acn config opencode-agent-name <name|default>  OpenCode agent name; default: Ope
 acn config claude|codex|opencode <on|off>      Enable or disable notifications from the respective agent
 acn config claude-attention <on|off>           Notify when Claude requires input or permission; default: on
 acn config claude-idle-reminder <on|off>       Notify after 60 seconds without input at Claude turn end; default: off
+acn config claude-failure-alert <on|off>       Notify when a Claude turn ends because of an API error; default: on
+acn config codex-attention <on|off>            Notify when Codex requests tool permission; default: on
 ```
 
 For example, if the computer uses Japan time but notifications should show Shanghai time:
@@ -159,7 +161,13 @@ The OpenCode integration is `~/.config/opencode/plugins/acn.js` (the same user-d
 
 ### Claude Code attention notifications
 
-In addition to Stop events, acn sends notifications when Claude Code needs you during a turn. An `AskUserQuestion` notification includes the question and every option; a tool-permission notification includes the approval prompt. Both are enabled by default and can be disabled with `acn config claude-attention off`. The idle reminder, sent after 60 seconds without input at the end of a turn, substantially overlaps with completion notifications and is disabled by default; enable it with `acn config claude-idle-reminder on`. These hooks run asynchronously and do not block the conversation. `ignore-dir` rules also apply to attention notifications. Codex and OpenCode do not expose an equivalent mechanism.
+In addition to Stop events, acn sends notifications when Claude Code needs you during a turn. An `AskUserQuestion` notification includes the question and every option; a tool-permission notification includes the approval prompt. Both are enabled by default and can be disabled with `acn config claude-attention off`. The idle reminder, sent after 60 seconds without input at the end of a turn, substantially overlaps with completion notifications and is disabled by default; enable it with `acn config claude-idle-reminder on`. These hooks run asynchronously and do not block the conversation. `ignore-dir` rules also apply to attention notifications.
+
+When a Claude turn ends because of an API error such as a rate limit, authentication issue, or server error, acn sends a failure notification. The body uses Claude's error details when available. This alert is enabled by default and can be disabled with `acn config claude-failure-alert off`. The StopFailure hook runs asynchronously.
+
+### Codex permission notifications
+
+When Codex requests permission for a command, file edit, or MCP tool call, acn sends a permission notification. The body uses Codex's approval reason when available, followed by a command summary or tool name. This alert is enabled by default and can be disabled with `acn config codex-attention off`. `acn install codex` installs both completion and permission hooks; the permission hook runs asynchronously so the approval prompt appears immediately.
 
 Enabled and configured channels send concurrently. A failure in one channel does not stop delivery attempts to the others, and errors identify the failed channel. Notification replies retain at most 1,000 characters by default; change this with `max-message-length`, or use `0` for no truncation.
 

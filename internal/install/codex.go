@@ -32,7 +32,7 @@ func codexConfigPath() string {
 	return filepath.Join(home, ".codex", "config.toml")
 }
 
-// installCodex 幂等地追加 [[hooks.Stop]] 块。
+// installCodex 幂等地追加任务完成与权限确认钩子。
 //
 // 用 hooks 而非顶层 notify：notify 是遗留路径（二进制里就叫 legacy_notify），
 // 且全局只有一个槽位——抢占它会破坏用户已有的集成（如 Codex Computer Use），
@@ -52,8 +52,7 @@ func installCodex(exe string) error {
 	if !strings.HasSuffix(body, "\n") && body != "" {
 		body += "\n"
 	}
-	groupIndex := codexStopGroupCount(body)
-	return writeCodexConfig(path, body+codexHookBlock(path, exe, groupIndex))
+	return writeCodexConfig(path, body+codexHookBlock(path, exe, codexHookSpecs(body)))
 }
 
 // uninstallCodex 摘除 acn 的块。
@@ -92,17 +91,15 @@ func queryCodex() TargetStatus {
 		st.Installed = true
 		st.Exe = recordedCodexExe(string(data))
 		st.TrustKnown = true
-		st.Trusted = codexHookTrusted(
-			string(data), st.Path, st.Exe, codexACNStopGroupIndex(string(data)),
-		)
+		st.Trusted = codexHooksTrusted(string(data), st.Path, st.Exe)
 		if st.Trusted {
-			st.Detail = "Stop hook 已安装并信任"
+			st.Detail = "Stop/权限确认 hook 已安装并信任"
 		} else {
-			st.Detail = "Stop hook 已安装，信任状态不匹配"
+			st.Detail = "Stop/权限确认 hook 已安装，信任状态不匹配"
 		}
 		// 只在装了之后才提醒——没装的话这个前提无关紧要。
 		if hooksDisabled(string(data)) {
-			st.Warning = "config.toml 里 [features] hooks = false，Stop hook 不会触发"
+			st.Warning = "config.toml 里 [features] hooks = false，ACN hook 不会触发"
 		}
 	} else {
 		st.Detail = "未安装"
@@ -128,27 +125,59 @@ func recordedCodexExe(content string) string {
 	return ""
 }
 
+type codexHookSpec struct {
+	EventName     string
+	EventKey      string
+	Source        string
+	StatusMessage string
+	Async         bool
+	GroupIndex    int
+}
+
+// codexHookSpecs 返回 ACN 管理的 Codex hooks 及其在当前配置中的组序号。
+func codexHookSpecs(content string) []codexHookSpec {
+	return []codexHookSpec{
+		{
+			EventName: "Stop", EventKey: "stop", Source: "codex", StatusMessage: "acn 通知",
+			GroupIndex: codexHookGroupCount(content, "Stop"),
+		},
+		{
+			EventName: "PermissionRequest", EventKey: "permission_request", Source: "codex-permission",
+			StatusMessage: "acn 权限提醒", Async: true,
+			GroupIndex: codexHookGroupCount(content, "PermissionRequest"),
+		},
+	}
+}
+
 // codexHookBlock 渲染要写入的块。
 //
 // 注意 hook 绝不能往 stdout 写东西：Stop hook 输出 {"decision":"block"} 会让
 // Codex 自动续跑一轮。acn 的日志一律走 stderr。
-func codexHookBlock(configPath, exe string, groupIndex int) string {
-	command := hookCommand(exe, "codex")
-	return strings.Join([]string{
-		codexBegin,
-		"[[hooks.Stop]]",
-		"",
-		"[[hooks.Stop.hooks]]",
-		`type = "command"`,
-		"command = " + quoteTOMLString(command),
-		fmt.Sprintf("timeout = %d", codexHookTimeout),
-		`statusMessage = "acn 通知"`,
-		"",
-		"[hooks.state." + quoteTOMLKey(codexHookStateKey(configPath, groupIndex)) + "]",
-		"trusted_hash = " + quoteTOMLString(codexHookHash(command)),
-		codexEnd,
-		"",
-	}, "\n")
+func codexHookBlock(configPath, exe string, specs []codexHookSpec) string {
+	lines := []string{codexBegin}
+	for _, spec := range specs {
+		command := hookCommand(exe, spec.Source)
+		lines = append(lines,
+			"[[hooks."+spec.EventName+"]]",
+			"",
+			"[[hooks."+spec.EventName+".hooks]]",
+			`type = "command"`,
+			"command = "+quoteTOMLString(command),
+		)
+		if spec.Async {
+			lines = append(lines, "async = true")
+		}
+		lines = append(lines,
+			fmt.Sprintf("timeout = %d", codexHookTimeout),
+			"statusMessage = "+quoteTOMLString(spec.StatusMessage),
+			"",
+			"[hooks.state."+quoteTOMLKey(codexHookStateKey(configPath, spec.EventKey, spec.GroupIndex))+"]",
+			"trusted_hash = "+quoteTOMLString(codexHookHash(spec, command)),
+			"",
+		)
+	}
+	lines = append(lines, codexEnd, "")
+	return strings.Join(lines, "\n")
 }
 
 type codexNormalizedHookIdentity struct {
@@ -166,14 +195,15 @@ type codexNormalizedCommandHook struct {
 
 // codexHookHash 复现 Codex 对规范化 command hook 身份的版本计算。Codex 会
 // 先把结构转为 TOML（因此省略 None 字段），再对按键排序的 JSON 做 SHA-256。
-// 这里只生成 ACN 固定的 Stop hook，字段顺序就是 canonical JSON 的键顺序。
-func codexHookHash(command string) string {
+// 字段顺序就是 canonical JSON 的键顺序。
+func codexHookHash(spec codexHookSpec, command string) string {
 	identity := codexNormalizedHookIdentity{
-		EventName: "stop",
+		EventName: spec.EventKey,
 		Hooks: []codexNormalizedCommandHook{
 			{
+				Async:         spec.Async,
 				Command:       command,
-				StatusMessage: "acn 通知",
+				StatusMessage: spec.StatusMessage,
 				Timeout:       codexHookTimeout,
 				Type:          "command",
 			},
@@ -190,16 +220,33 @@ func codexHookHash(command string) string {
 	return fmt.Sprintf("sha256:%x", sum)
 }
 
-func codexHookStateKey(configPath string, groupIndex int) string {
-	return fmt.Sprintf("%s:stop:%d:0", canonicalCodexConfigPath(configPath), groupIndex)
+func codexHookStateKey(configPath, eventKey string, groupIndex int) string {
+	return fmt.Sprintf("%s:%s:%d:0", canonicalCodexConfigPath(configPath), eventKey, groupIndex)
 }
 
-func codexHookTrusted(content, configPath, exe string, groupIndex int) bool {
-	if exe == "" || groupIndex < 0 {
+func codexHooksTrusted(content, configPath, exe string) bool {
+	if exe == "" {
 		return false
 	}
-	header := "[hooks.state." + quoteTOMLKey(codexHookStateKey(configPath, groupIndex)) + "]"
-	expected := "trusted_hash = " + quoteTOMLString(codexHookHash(hookCommand(exe, "codex")))
+	for _, spec := range codexHookSpecsBeforeACNBlock(content) {
+		if spec.GroupIndex < 0 || !codexHookTrusted(content, configPath, exe, spec) {
+			return false
+		}
+	}
+	return true
+}
+
+func codexHookSpecsBeforeACNBlock(content string) []codexHookSpec {
+	specs := codexHookSpecs("")
+	for i := range specs {
+		specs[i].GroupIndex = codexACNHookGroupIndex(content, specs[i].EventName)
+	}
+	return specs
+}
+
+func codexHookTrusted(content, configPath, exe string, spec codexHookSpec) bool {
+	header := "[hooks.state." + quoteTOMLKey(codexHookStateKey(configPath, spec.EventKey, spec.GroupIndex)) + "]"
+	expected := "trusted_hash = " + quoteTOMLString(codexHookHash(spec, hookCommand(exe, spec.Source)))
 	inState := false
 	for _, line := range splitLines(content) {
 		trimmed := strings.TrimSpace(line)
@@ -214,23 +261,23 @@ func codexHookTrusted(content, configPath, exe string, groupIndex int) bool {
 	return false
 }
 
-func codexStopGroupCount(content string) int {
+func codexHookGroupCount(content, eventName string) int {
 	count := 0
 	for _, line := range splitLines(content) {
-		if strings.TrimSpace(line) == "[[hooks.Stop]]" {
+		if strings.TrimSpace(line) == "[[hooks."+eventName+"]]" {
 			count++
 		}
 	}
 	return count
 }
 
-func codexACNStopGroupIndex(content string) int {
+func codexACNHookGroupIndex(content, eventName string) int {
 	index := 0
 	for _, line := range splitLines(content) {
 		switch strings.TrimSpace(line) {
 		case codexBegin:
 			return index
-		case "[[hooks.Stop]]":
+		case "[[hooks." + eventName + "]]":
 			index++
 		}
 	}

@@ -37,12 +37,24 @@ func buildHookEvent(source string, stdin io.Reader) (ev event.Event, skip bool, 
 		}
 		ev, ok := claude.FromNotificationPayload(payload)
 		return ev, !ok, nil
+	case "claude-failure":
+		payload, err := hook.ReadStopFailure(stdin)
+		if err != nil {
+			return event.Event{}, false, err
+		}
+		return claude.FromStopFailurePayload(payload), false, nil
 	case "codex":
 		payload, err := hook.ReadStop(stdin)
 		if err != nil {
 			return event.Event{}, false, err
 		}
 		return codex.FromPayload(payload, time.Now()), false, nil
+	case "codex-permission":
+		payload, err := hook.ReadPermissionRequest(stdin)
+		if err != nil {
+			return event.Event{}, false, err
+		}
+		return codex.FromPermissionRequestPayload(payload), false, nil
 	case "opencode":
 		ev, err := opencode.FromReader(stdin)
 		return ev, false, err

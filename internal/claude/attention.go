@@ -97,3 +97,23 @@ func FromNotificationPayload(p hook.NotificationPayload) (event.Event, bool) {
 	}
 	return ev, true
 }
+
+// FromStopFailurePayload 把 Claude Code 的 StopFailure 载荷翻译成 API 错误
+// 终止通知。详情字段、界面错误文本与错误类型按优先级选择，保证正文有可读原因。
+func FromStopFailurePayload(p hook.StopFailurePayload) event.Event {
+	ev := event.Event{
+		Source:      event.SourceClaude,
+		Cwd:         p.Cwd,
+		SessionID:   p.SessionID,
+		SessionName: "任务异常终止",
+		Kind:        event.KindFailure,
+	}
+	for _, message := range []string{p.ErrorDetails, p.LastAssistantMessage, p.Error} {
+		if message = strings.TrimSpace(message); message != "" {
+			ev.Message = message
+			return ev
+		}
+	}
+	ev.Message = "Claude 因 API 错误终止当前回合。"
+	return ev
+}

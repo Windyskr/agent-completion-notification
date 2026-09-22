@@ -50,6 +50,36 @@ func FromPayload(p hook.StopPayload, now time.Time) event.Event {
 	return ev
 }
 
+// FromPermissionRequestPayload 把 Codex 的 PermissionRequest 载荷翻译成
+// 「权限确认」事件。优先展示 Codex 提供的审批原因；没有原因时展示工具名称或
+// 命令摘要，方便用户在手机上判断需要回到电脑处理什么操作。
+func FromPermissionRequestPayload(p hook.PermissionRequestPayload) event.Event {
+	ev := event.Event{
+		Source:      event.SourceCodex,
+		Cwd:         p.Cwd,
+		SessionID:   firstNonEmpty(p.SessionID, p.TurnID),
+		SessionName: "权限确认",
+		Kind:        event.KindPermission,
+	}
+
+	var input struct {
+		Description string `json:"description"`
+		Command     string `json:"command"`
+	}
+	_ = json.Unmarshal(p.ToolInput, &input)
+	switch {
+	case strings.TrimSpace(input.Description) != "":
+		ev.Message = strings.TrimSpace(input.Description)
+	case strings.TrimSpace(input.Command) != "":
+		ev.Message = "请求执行命令：\n" + strings.TrimSpace(input.Command)
+	case strings.TrimSpace(p.ToolName) != "":
+		ev.Message = "Codex 正在等待工具权限审批：" + strings.TrimSpace(p.ToolName)
+	default:
+		ev.Message = "Codex 正在等待权限审批。"
+	}
+	return ev
+}
+
 // sessionIndexRow 是 ~/.codex/session_index.jsonl 的一条会话索引记录。
 // 同一会话重命名后可能出现多条记录，因此扫描时保留最后一个匹配名称。
 type sessionIndexRow struct {

@@ -252,7 +252,7 @@ func TestInstallClaudeWritesBackup(t *testing.T) {
 	}
 }
 
-// 安装要同时挂上完成与等待介入三类事件；等待介入条目必须 async，
+// 安装要同时挂上完成、等待介入与异常终止事件；异步条目必须带 async，
 // PreToolUse 必须带 AskUserQuestion matcher。
 func TestInstallClaudeWritesAttentionHooks(t *testing.T) {
 	home := withHome(t)
@@ -286,15 +286,21 @@ func TestInstallClaudeWritesAttentionHooks(t *testing.T) {
 	if strings.Contains(string(notif), `"matcher"`) {
 		t.Errorf("Notification 不应带 matcher:\n%s", notif)
 	}
+	failure, _ := json.Marshal(hooks["StopFailure"])
+	for _, want := range []string{"hook claude-failure", `"async":true`} {
+		if !strings.Contains(string(failure), want) {
+			t.Errorf("StopFailure 缺少 %s:\n%s", want, failure)
+		}
+	}
 	if !queryClaude().Installed {
 		t.Error("安装后状态仍为未安装")
 	}
-	if detail := queryClaude().Detail; detail != "完成/选择/通知 hook 已安装" {
+	if detail := queryClaude().Detail; detail != "完成/选择/通知/异常 hook 已安装" {
 		t.Errorf("detail = %q", detail)
 	}
 }
 
-// 卸载要把三类事件上的 acn 条目全部摘掉，用户自己的 Notification hook 保留。
+// 卸载要把四类事件上的 acn 条目全部摘掉，用户自己的 Notification hook 保留。
 func TestUninstallClaudeRemovesAllEvents(t *testing.T) {
 	home := withHome(t)
 	path := writeSettings(t, home, `{
@@ -312,7 +318,7 @@ func TestUninstallClaudeRemovesAllEvents(t *testing.T) {
 
 	data, _ := os.ReadFile(path)
 	text := string(data)
-	for _, leftover := range []string{"hook claude", "hook claude-question", "hook claude-notification"} {
+	for _, leftover := range []string{"hook claude", "hook claude-question", "hook claude-notification", "hook claude-failure"} {
 		if strings.Contains(text, leftover) {
 			t.Errorf("卸载后仍残留 %s:\n%s", leftover, text)
 		}

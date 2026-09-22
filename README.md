@@ -155,6 +155,8 @@ acn config codex <on|off>       是否推送 Codex
 acn config opencode <on|off>    是否推送 OpenCode
 acn config claude-attention <on|off>     Claude 等待选择/权限审批时推送，默认 on
 acn config claude-idle-reminder <on|off> Claude 回合结束 60 秒无输入时推送，默认 off
+acn config claude-failure-alert <on|off> Claude 因 API 错误终止回合时推送，默认 on
+acn config codex-attention <on|off>      Codex 等待工具权限审批时推送，默认 on
 ```
 
 例如，机器使用日本时区、但希望通知显示上海时间：
@@ -200,6 +202,17 @@ Claude 通过 AskUserQuestion 发起选择时，推送问题文本与全部选�
 `acn config claude-idle-reminder on` 打开。这些 hook 以 async 方式挂载，
 不会阻塞对话；`ignore-dir` 规则同样适用于等待介入推送。Codex 与 OpenCode
 没有对应机制，此功能仅覆盖 Claude Code。
+
+Claude 因限流、鉴权、服务端错误等 API 错误终止回合时，acn 还会推送异常终止提醒。
+正文优先展示 Claude 提供的错误详情，默认开启；可通过
+`acn config claude-failure-alert off` 关闭。异常终止 hook 以 async 方式运行。
+
+### Codex 权限确认推送
+
+Codex 请求执行需要用户批准的命令、文件修改或 MCP 工具操作时，acn 会推送权限确认，
+正文优先展示 Codex 给出的审批原因；没有原因时展示工具名称或命令摘要。该功能默认开启，
+可通过 `acn config codex-attention off` 关闭。`acn install codex` 会同时安装完成通知与
+权限确认 hook；权限确认 hook 以 async 方式运行，不延迟 Codex 显示批准界面。
 
 已配置且启用的
 渠道会并发发送，一个渠道失败不会阻止另一个渠道尝试，错误信息会注明失败渠道。

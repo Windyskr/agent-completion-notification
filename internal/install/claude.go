@@ -8,13 +8,14 @@ import (
 	"strings"
 )
 
-// claudeHookEvent 是任务完成事件；另外两个是等待介入事件——回合还没结束，
-// 但需要人回来做决策。三者都挂在用户级 settings.json 的 hooks 下。
+// claudeHookEvent 是任务完成事件；其余事件用于等待介入与 API 错误终止提醒。
+// 它们都挂在用户级 settings.json 的 hooks 下。
 const claudeHookEvent = "Stop"
 
 const (
 	claudeEventPreToolUse   = "PreToolUse"
 	claudeEventNotification = "Notification"
+	claudeEventStopFailure  = "StopFailure"
 )
 
 // askUserMatcher 让 PreToolUse 只在 Claude 发起选择（AskUserQuestion）时触发，
@@ -26,7 +27,7 @@ const askUserMatcher = "AskUserQuestion"
 const claudeHookTimeout = 10
 
 // claudeEvents 是 acn 管理的全部事件。
-var claudeEvents = []string{claudeHookEvent, claudeEventPreToolUse, claudeEventNotification}
+var claudeEvents = []string{claudeHookEvent, claudeEventPreToolUse, claudeEventNotification, claudeEventStopFailure}
 
 // claudeEventLabel 返回事件在状态输出里的短标签。
 func claudeEventLabel(eventName string) string {
@@ -37,6 +38,8 @@ func claudeEventLabel(eventName string) string {
 		return "选择"
 	case claudeEventNotification:
 		return "通知"
+	case claudeEventStopFailure:
+		return "异常"
 	}
 	return eventName
 }
@@ -50,6 +53,8 @@ func claudeHookSource(eventName string) string {
 		return "claude-question"
 	case claudeEventNotification:
 		return "claude-notification"
+	case claudeEventStopFailure:
+		return "claude-failure"
 	}
 	return "claude"
 }
@@ -60,8 +65,8 @@ type hookEntry struct {
 	Command string   `json:"command"`
 	Args    []string `json:"args,omitempty"`
 	Timeout int      `json:"timeout,omitempty"`
-	// Async 为 true 时后台执行、不阻塞回合。等待介入事件发生在回合中间，
-	// 必须异步；Stop 沿用同步语义，保持既有行为不变。
+	// Async 为 true 时后台执行、不阻塞回合。等待介入与异常终止事件均异步，
+	// Stop 沿用同步语义，保持既有行为不变。
 	Async bool `json:"async,omitempty"`
 }
 
@@ -80,7 +85,7 @@ func claudeSettingsPath() string {
 	return filepath.Join(home, ".claude", "settings.json")
 }
 
-// installClaude 幂等地把 acn 挂到完成与等待介入事件上。
+// installClaude 幂等地把 acn 挂到完成、等待介入与异常终止事件上。
 func installClaude(exe string) error {
 	return editClaudeSettings(claudeEvents, func(eventName string, groups []json.RawMessage) ([]json.RawMessage, error) {
 		// 先摘掉旧的 acn 条目再追加，重复安装才不会堆积。

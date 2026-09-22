@@ -52,7 +52,9 @@ const usage = `acn (Agent Completion Notification) — Agent 任务完成通知
   acn hook claude        Claude Code 的 Stop hook 入口（读 stdin）
   acn hook claude-question      Claude Code 等待选择（AskUserQuestion）入口
   acn hook claude-notification  Claude Code 通知（权限审批/空闲）入口
+  acn hook claude-failure       Claude Code API 错误终止入口
   acn hook codex         Codex 的 Stop hook 入口（读 stdin）
+  acn hook codex-permission Codex 权限确认入口（读 stdin）
   acn hook opencode      OpenCode 的 session.idle 插件入口（读 stdin）
   acn version            打印版本
 
@@ -101,6 +103,8 @@ const usage = `acn (Agent Completion Notification) — Agent 任务完成通知
   opencode <on|off>      是否推送 OpenCode
   claude-attention <on|off>     Claude 等待选择/权限审批时推送，默认 on
   claude-idle-reminder <on|off> Claude 回合结束 60 秒无输入时推送，默认 off
+  claude-failure-alert <on|off> Claude 因 API 错误终止回合时推送，默认 on
+  codex-attention <on|off>      Codex 等待工具权限审批时推送，默认 on
 `
 
 func main() {
@@ -296,8 +300,10 @@ func cmdStatus() error {
 	fmt.Printf("  · 来源开关：claude=%s codex=%s opencode=%s\n",
 		onOff(cfg.SourceEnabled(event.SourceClaude)), onOff(cfg.SourceEnabled(event.SourceCodex)),
 		onOff(cfg.SourceEnabled(event.SourceOpenCode)))
-	fmt.Printf("  · Claude 等待介入：选择/权限=%s 空闲提醒=%s\n",
-		onOff(cfg.ClaudeAttentionEnabled()), onOff(cfg.ClaudeIdleReminderEnabled()))
+	fmt.Printf("  · Claude 等待介入：选择/权限=%s 空闲提醒=%s 异常终止=%s\n",
+		onOff(cfg.ClaudeAttentionEnabled()), onOff(cfg.ClaudeIdleReminderEnabled()),
+		onOff(cfg.ClaudeFailureAlertEnabled()))
+	fmt.Printf("  · Codex 权限确认：%s\n", onOff(cfg.CodexAttentionEnabled()))
 
 	return nil
 }
@@ -524,6 +530,18 @@ func cmdConfig(args []string) error {
 			return err
 		}
 		cfg.ClaudeIdleReminder = on
+	case "claude-failure-alert":
+		on, err := parseBool(value)
+		if err != nil {
+			return err
+		}
+		cfg.ClaudeFailureAlert = &on
+	case "codex-attention":
+		on, err := parseBool(value)
+		if err != nil {
+			return err
+		}
+		cfg.CodexAttention = &on
 	default:
 		return fmt.Errorf("未知配置项 %q，运行 acn help 查看全部配置项", key)
 	}
