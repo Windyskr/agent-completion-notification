@@ -32,6 +32,20 @@ type Notifier interface {
 	Send(context.Context, event.Event) error
 }
 
+// DeliveryResult 记录一个通知渠道的本次投递结果。
+type DeliveryResult struct {
+	Channel string `json:"channel"`
+	Sent    bool   `json:"sent"`
+	Error   string `json:"error,omitempty"`
+}
+
+// Report 记录一次通知判定与投递的完整结果。
+type Report struct {
+	Event          event.Event      `json:"event"`
+	SkippedReason  string           `json:"skipped_reason,omitempty"`
+	DeliveryResult []DeliveryResult `json:"delivery"`
+}
+
 // Gate 判断该事件是否应当推送，返回的字符串为不推送的原因。
 func Gate(cfg config.Config, ev event.Event) string {
 	if !cfg.SourceEnabled(ev.Source) {
@@ -76,12 +90,21 @@ func Gate(cfg config.Config, ev event.Event) string {
 
 // Send 先过 Gate 再投递。skipped 非空表示按规则未发送，此时 err 为 nil。
 func Send(ctx context.Context, cfg config.Config, ev event.Event) (skipped string, err error) {
+	report, err := SendWithReport(ctx, cfg, ev)
+	return report.SkippedReason, err
+}
+
+// SendWithReport 在发送后返回过滤判定和每个渠道的投递结果。
+func SendWithReport(ctx context.Context, cfg config.Config, ev event.Event) (Report, error) {
+	report := Report{Event: ev}
 	if reason := Gate(cfg, ev); reason != "" {
-		return reason, nil
+		report.SkippedReason = reason
+		return report, nil
 	}
 	notifiers := configuredNotifiers(cfg)
 	if len(notifiers) == 0 {
-		return "未配置已启用的通知渠道", nil
+		report.SkippedReason = "未配置已启用的通知渠道"
+		return report, nil
 	}
 	if ev.DeviceName == "" {
 		ev.DeviceName = cfg.EffectiveDeviceName()
@@ -93,26 +116,33 @@ func Send(ctx context.Context, cfg config.Config, ev event.Event) (skipped strin
 	ev.SetMaxMessageLength(cfg.MaxMessageLength)
 	location, locationErr := cfg.NotificationLocation()
 	if locationErr != nil {
-		return "", locationErr
+		return report, locationErr
 	}
 	ev.SetLocation(location)
+	report.Event = ev
 
 	ctx, cancel := context.WithTimeout(ctx, SendTimeout)
 	defer cancel()
 
 	errs := make([]error, len(notifiers))
+	report.DeliveryResult = make([]DeliveryResult, len(notifiers))
 	var wg sync.WaitGroup
 	for i, notifier := range notifiers {
 		wg.Add(1)
-		go func() {
+		go func(index int, notifier Notifier) {
 			defer wg.Done()
+			result := DeliveryResult{Channel: notifier.Name()}
 			if sendErr := notifier.Send(ctx, ev); sendErr != nil {
-				errs[i] = fmt.Errorf("%s: %w", notifier.Name(), sendErr)
+				errs[index] = fmt.Errorf("%s: %w", notifier.Name(), sendErr)
+				result.Error = sendErr.Error()
+			} else {
+				result.Sent = true
 			}
-		}()
+			report.DeliveryResult[index] = result
+		}(i, notifier)
 	}
 	wg.Wait()
-	return "", errors.Join(errs...)
+	return report, errors.Join(errs...)
 }
 
 func configuredNotifiers(cfg config.Config) []Notifier {

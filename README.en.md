@@ -141,6 +141,7 @@ acn config claude-attention <on|off>           Notify when Claude requires input
 acn config claude-idle-reminder <on|off>       Notify after 60 seconds without input at Claude turn end; default: off
 acn config claude-failure-alert <on|off>       Notify when a Claude turn ends because of an API error; default: on
 acn config codex-attention <on|off>            Notify when Codex requests tool permission; default: on
+acn config event-log <on|off>                  Record complete hook-processing logs; default: off
 ```
 
 For example, if the computer uses Japan time but notifications should show Shanghai time:
@@ -150,6 +151,8 @@ acn config notification-timezone Asia/Shanghai
 ```
 
 Use `acn config notification-timezone local` to restore the machine's local timezone. This only affects the completion timestamp in the notification body; it does not affect duration measurement or webhook-signature timestamps.
+
+Use `acn config event-log on` to write each hook's raw JSON, Paseo agent and terminal IDs, normalized event, skip reason, per-channel delivery results, errors, and elapsed time to `~/.acn/events.jsonl`. The file uses mode `0600`; raw payloads can contain prompts, commands, and agent replies. Use `acn config event-log off` to stop subsequent records while retaining existing entries.
 
 Notification titles use the session name by default. Claude Code reads the `ai-title` record from its transcript. Codex looks up the hook `session_id` in `$CODEX_HOME/session_index.jsonl` (by default, `~/.codex/session_index.jsonl`). On `session.idle`, the OpenCode plugin reads the session title and latest assistant message. When a session name is unavailable, acn uses the enabled device, agent, and project-name prefixes; when all prefixes are disabled, it shows `Task complete` to avoid an empty title.
 

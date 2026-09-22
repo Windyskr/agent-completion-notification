@@ -157,6 +157,7 @@ acn config claude-attention <on|off>     Claude 等待选择/权限审批时推�
 acn config claude-idle-reminder <on|off> Claude 回合结束 60 秒无输入时推送，默认 off
 acn config claude-failure-alert <on|off> Claude 因 API 错误终止回合时推送，默认 on
 acn config codex-attention <on|off>      Codex 等待工具权限审批时推送，默认 on
+acn config event-log <on|off>             记录完整 hook 处理日志，默认 off
 ```
 
 例如，机器使用日本时区、但希望通知显示上海时间：
@@ -167,6 +168,11 @@ acn config notification-timezone Asia/Shanghai
 
 使用 `acn config notification-timezone local` 可恢复为机器本地时区。该配置只影响通知
 正文中的“完成时间”，不会影响任务耗时或 webhook 签名时间戳。
+
+使用 `acn config event-log on` 可将每次 hook 的原始 JSON、Paseo Agent 与终端标识、
+解析后的事件、跳过原因、通知渠道逐项结果、错误信息和处理耗时写入
+`~/.acn/events.jsonl`。日志文件权限为 0600，原始载荷可能包含提示词、命令和回复内容，
+请按敏感数据管理。`acn config event-log off` 可停止后续记录，已有日志会保留。
 
 通知标题默认直接使用会话名，例如 `完善组件消融实验方案`。Claude Code 从 transcript
 中的 `ai-title` 记录读取；Codex 用 hook 的 `session_id` 查询

@@ -9,14 +9,18 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/windyskr/agent-completion-notification/internal/config"
 	"github.com/windyskr/agent-completion-notification/internal/event"
+	"github.com/windyskr/agent-completion-notification/internal/eventlog"
+	"github.com/windyskr/agent-completion-notification/internal/hook"
 	"github.com/windyskr/agent-completion-notification/internal/install"
 	"github.com/windyskr/agent-completion-notification/internal/notify"
 )
@@ -105,6 +109,7 @@ const usage = `acn (Agent Completion Notification) — Agent 任务完成通知
   claude-idle-reminder <on|off> Claude 回合结束 60 秒无输入时推送，默认 off
   claude-failure-alert <on|off> Claude 因 API 错误终止回合时推送，默认 on
   codex-attention <on|off>      Codex 等待工具权限审批时推送，默认 on
+  event-log <on|off>            记录完整 hook 处理日志到 events.jsonl，默认 off
 `
 
 func main() {
@@ -155,18 +160,26 @@ func run(args []string) error {
 // 通知失败远不如打断工作流严重，因此一切诊断信息只走 stderr。
 func cmdHook(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("用法：acn hook <claude|claude-question|claude-notification|codex|opencode>")
+		return fmt.Errorf("用法：acn hook <claude|claude-question|claude-notification|claude-failure|codex|codex-permission|opencode>")
 	}
 
-	ev, skip, err := buildHookEvent(args[0], os.Stdin)
+	started := time.Now()
+	raw, readErr := hook.ReadRaw(os.Stdin)
+	if readErr != nil {
+		fmt.Fprintln(os.Stderr, "acn hook: "+readErr.Error())
+		return nil
+	}
+	ev, skip, err := buildHookEvent(args[0], bytes.NewReader(raw))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "acn hook: "+err.Error())
+		writeEventLog(args[0], raw, nil, false, "", err, nil, nil, started)
 		return nil
 	}
 	if skip {
+		writeEventLog(args[0], raw, &ev, true, "上游事件无需推送", nil, nil, nil, started)
 		return nil
 	}
-	deliver(ev)
+	deliver(args[0], raw, ev, started)
 	return nil
 }
 
@@ -175,19 +188,73 @@ func cmdHook(args []string) error {
 // 曾经这里有一条「先丢给常驻 daemon 异步发」的快路径，实测只省 78ms
 // （本地开销 45ms 两者相同，差的仅是一次约 80ms 的飞书往返），
 // 却要付出常驻服务、socket 生命周期与两套投递路径的代价，已移除。
-func deliver(ev event.Event) {
+func deliver(hookSource string, raw []byte, ev event.Event, started time.Time) {
 	cfg, err := config.Load()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "acn: 加载配置失败: "+err.Error())
+		writeEventLog(hookSource, raw, &ev, false, "", nil, err, nil, started)
 		return
 	}
 
-	skipped, err := notify.Send(context.Background(), cfg, ev)
+	report, err := notify.SendWithReport(context.Background(), cfg, ev)
+	writeEventLogWithConfig(cfg, hookSource, raw, &report.Event, report.SkippedReason, err, report.DeliveryResult, started)
 	switch {
 	case err != nil:
 		fmt.Fprintln(os.Stderr, "acn: 推送失败: "+err.Error())
-	case skipped != "":
-		fmt.Fprintln(os.Stderr, "acn: 未推送（"+skipped+"）")
+	case report.SkippedReason != "":
+		fmt.Fprintln(os.Stderr, "acn: 未推送（"+report.SkippedReason+"）")
+	}
+}
+
+func writeEventLogWithConfig(cfg config.Config, hookSource string, raw []byte, ev *event.Event, skipped string, deliveryErr error, delivery []notify.DeliveryResult, started time.Time) {
+	if !cfg.EventLogEnabled {
+		return
+	}
+	entry := eventlog.Entry{
+		Timestamp:       started,
+		HookSource:      hookSource,
+		RawPayload:      string(raw),
+		PaseoAgentID:    strings.TrimSpace(os.Getenv("PASEO_AGENT_ID")),
+		PaseoTerminalID: strings.TrimSpace(os.Getenv("PASEO_TERMINAL_ID")),
+		Event:           ev,
+		Skip:            skipped != "",
+		SkippedReason:   skipped,
+		Delivery:        delivery,
+		ElapsedMS:       time.Since(started).Milliseconds(),
+	}
+	if deliveryErr != nil {
+		entry.DeliveryError = deliveryErr.Error()
+	}
+	if err := eventlog.Append(config.EventLogPath(), entry); err != nil {
+		fmt.Fprintln(os.Stderr, "acn: 写入事件日志失败: "+err.Error())
+	}
+}
+
+func writeEventLog(hookSource string, raw []byte, ev *event.Event, skip bool, skippedReason string, parseErr, configErr error, delivery []notify.DeliveryResult, started time.Time) {
+	cfg, err := config.Load()
+	if err != nil || !cfg.EventLogEnabled {
+		return
+	}
+	entry := eventlog.Entry{
+		Timestamp:       started,
+		HookSource:      hookSource,
+		RawPayload:      string(raw),
+		PaseoAgentID:    strings.TrimSpace(os.Getenv("PASEO_AGENT_ID")),
+		PaseoTerminalID: strings.TrimSpace(os.Getenv("PASEO_TERMINAL_ID")),
+		Event:           ev,
+		Skip:            skip,
+		SkippedReason:   skippedReason,
+		Delivery:        delivery,
+		ElapsedMS:       time.Since(started).Milliseconds(),
+	}
+	if parseErr != nil {
+		entry.ParseError = parseErr.Error()
+	}
+	if configErr != nil {
+		entry.ConfigError = configErr.Error()
+	}
+	if err := eventlog.Append(config.EventLogPath(), entry); err != nil {
+		fmt.Fprintln(os.Stderr, "acn: 写入事件日志失败: "+err.Error())
 	}
 }
 
@@ -304,6 +371,7 @@ func cmdStatus() error {
 		onOff(cfg.ClaudeAttentionEnabled()), onOff(cfg.ClaudeIdleReminderEnabled()),
 		onOff(cfg.ClaudeFailureAlertEnabled()))
 	fmt.Printf("  · Codex 权限确认：%s\n", onOff(cfg.CodexAttentionEnabled()))
+	fmt.Printf("  · 事件日志：%s（%s）\n", onOff(cfg.EventLogEnabled), config.EventLogPath())
 
 	return nil
 }
@@ -542,6 +610,12 @@ func cmdConfig(args []string) error {
 			return err
 		}
 		cfg.CodexAttention = &on
+	case "event-log":
+		on, err := parseBool(value)
+		if err != nil {
+			return err
+		}
+		cfg.EventLogEnabled = on
 	default:
 		return fmt.Errorf("未知配置项 %q，运行 acn help 查看全部配置项", key)
 	}

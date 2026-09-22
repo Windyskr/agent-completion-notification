@@ -48,6 +48,15 @@ func ReadStop(r io.Reader) (StopPayload, error) {
 	return p, nil
 }
 
+// ReadRaw 读取受大小限制的 hook 原始载荷，供诊断日志记录使用。
+func ReadRaw(r io.Reader) ([]byte, error) {
+	raw, err := io.ReadAll(io.LimitReader(r, maxStdin))
+	if err != nil {
+		return nil, fmt.Errorf("读取 stdin 失败: %w", err)
+	}
+	return raw, nil
+}
+
 // PreToolUsePayload 是工具调用执行前经 stdin 传入的载荷。acn 只挂
 // AskUserQuestion 一个 matcher，用于捕获「Claude 正在等待用户选择」的时刻。
 type PreToolUsePayload struct {
@@ -133,9 +142,9 @@ func ReadPermissionRequest(r io.Reader) (PermissionRequestPayload, error) {
 
 // readPayload 统一读取并解析 stdin 载荷，限制体积避免异常输入撑爆内存。
 func readPayload(r io.Reader, p any) error {
-	raw, err := io.ReadAll(io.LimitReader(r, maxStdin))
+	raw, err := ReadRaw(r)
 	if err != nil {
-		return fmt.Errorf("读取 stdin 失败: %w", err)
+		return err
 	}
 	if err := json.Unmarshal(raw, p); err != nil {
 		return fmt.Errorf("解析载荷失败: %w", err)

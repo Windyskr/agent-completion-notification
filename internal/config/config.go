@@ -127,6 +127,9 @@ type Config struct {
 	MaxMessageLength int `json:"max_message_length"`
 	// NotificationTimezone 控制通知正文中时间的时区；留空时使用机器本地时区。
 	NotificationTimezone string `json:"notification_timezone,omitempty"`
+	// EventLogEnabled 控制 hook 完整诊断日志；默认关闭，因为原始载荷可能包含
+	// 用户提示词、工具参数和 Agent 回复。
+	EventLogEnabled bool `json:"event_log_enabled"`
 	// IgnoredDirectories 中的目录及其子目录不推送通知。
 	IgnoredDirectories []string `json:"ignored_directories,omitempty"`
 	// ClaudeAttention 控制 Claude Code 等待介入事件（AskUserQuestion 选择、
@@ -201,6 +204,9 @@ func Dir() string {
 
 // Path 返回配置文件路径。
 func Path() string { return filepath.Join(Dir(), "config.json") }
+
+// EventLogPath 返回 hook 事件诊断日志的 JSONL 文件路径。
+func EventLogPath() string { return filepath.Join(Dir(), "events.jsonl") }
 
 // SocketPath 返回 daemon 监听的 Unix socket 路径。
 func SocketPath() string { return filepath.Join(Dir(), "acn.sock") }
