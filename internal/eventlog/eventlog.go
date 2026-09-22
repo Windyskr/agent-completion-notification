@@ -15,19 +15,33 @@ import (
 // Entry 是一条 hook 调用的诊断记录。RawPayload 保留原始 stdin，便于排查
 // 上游 CLI 的事件字段；日志文件权限为 0600，仍应避免将其发送到第三方。
 type Entry struct {
-	Timestamp       time.Time               `json:"timestamp"`
-	HookSource      string                  `json:"hook_source"`
-	RawPayload      string                  `json:"raw_payload"`
-	PaseoAgentID    string                  `json:"paseo_agent_id,omitempty"`
-	PaseoTerminalID string                  `json:"paseo_terminal_id,omitempty"`
-	Event           *event.Event            `json:"event,omitempty"`
-	Skip            bool                    `json:"skip"`
-	SkippedReason   string                  `json:"skipped_reason,omitempty"`
-	ParseError      string                  `json:"parse_error,omitempty"`
-	ConfigError     string                  `json:"config_error,omitempty"`
-	Delivery        []notify.DeliveryResult `json:"delivery,omitempty"`
-	DeliveryError   string                  `json:"delivery_error,omitempty"`
-	ElapsedMS       int64                   `json:"elapsed_ms"`
+	Timestamp             time.Time               `json:"timestamp"`
+	HookSource            string                  `json:"hook_source"`
+	RawPayload            string                  `json:"raw_payload"`
+	RawPayloadPreview     string                  `json:"raw_payload_preview,omitempty"`
+	PaseoAgentID          string                  `json:"paseo_agent_id,omitempty"`
+	PaseoTerminalID       string                  `json:"paseo_terminal_id,omitempty"`
+	PaseoAgentName        string                  `json:"paseo_agent_name,omitempty"`
+	PaseoAgentLookupError string                  `json:"paseo_agent_lookup_error,omitempty"`
+	PaseoTitleGeneration  bool                    `json:"paseo_title_generation,omitempty"`
+	Event                 *event.Event            `json:"event,omitempty"`
+	MessagePreview        string                  `json:"message_preview,omitempty"`
+	Skip                  bool                    `json:"skip"`
+	SkippedReason         string                  `json:"skipped_reason,omitempty"`
+	ParseError            string                  `json:"parse_error,omitempty"`
+	ConfigError           string                  `json:"config_error,omitempty"`
+	Delivery              []notify.DeliveryResult `json:"delivery,omitempty"`
+	DeliveryError         string                  `json:"delivery_error,omitempty"`
+	ElapsedMS             int64                   `json:"elapsed_ms"`
+}
+
+// Preview 返回前 n 个 Unicode 字符，供快速浏览 JSONL 时使用。完整文本仍保留在原字段。
+func Preview(value string, n int) string {
+	runes := []rune(value)
+	if n <= 0 || len(runes) <= n {
+		return string(runes)
+	}
+	return string(runes[:n])
 }
 
 // Append 将一条记录追加到 JSONL 文件。每次 hook 只写一行，避免日志影响 stdout

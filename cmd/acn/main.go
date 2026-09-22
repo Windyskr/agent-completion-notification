@@ -23,6 +23,7 @@ import (
 	"github.com/windyskr/agent-completion-notification/internal/hook"
 	"github.com/windyskr/agent-completion-notification/internal/install"
 	"github.com/windyskr/agent-completion-notification/internal/notify"
+	"github.com/windyskr/agent-completion-notification/internal/paseo"
 )
 
 // version 由构建时通过 -ldflags "-X main.version=..." 注入。
@@ -179,8 +180,44 @@ func cmdHook(args []string) error {
 		writeEventLog(args[0], raw, &ev, true, "上游事件无需推送", nil, nil, nil, started)
 		return nil
 	}
-	deliver(args[0], raw, ev, started)
+	paseoDetails := enrichPaseoEvent(args[0], &ev)
+	if paseoDetails.TitleGeneration {
+		writeEventLog(args[0], raw, &ev, true, "Paseo 标题生成任务", nil, nil, nil, started, paseoDetails)
+		return nil
+	}
+	deliver(args[0], raw, ev, started, paseoDetails)
 	return nil
+}
+
+type paseoEventDetails struct {
+	AgentName        string
+	AgentLookupError string
+	TitleGeneration  bool
+}
+
+// enrichPaseoEvent 回填 Paseo 保存的 Agent 名称。Paseo 通过 app-server 运行
+// Codex，不写入 Codex 的 session_index.jsonl，因此仅在原生名称为空时查询。
+func enrichPaseoEvent(hookSource string, ev *event.Event) paseoEventDetails {
+	if hookSource != "codex" || strings.TrimSpace(ev.SessionName) != "" {
+		return paseoEventDetails{}
+	}
+	agentID := strings.TrimSpace(os.Getenv("PASEO_AGENT_ID"))
+	if agentID == "" {
+		return paseoEventDetails{}
+	}
+	agentName, err := paseo.AgentName(agentID)
+	details := paseoEventDetails{AgentName: agentName}
+	if err == nil && agentName != "" {
+		ev.SessionName = agentName
+		return details
+	}
+	if err != nil {
+		details.AgentLookupError = err.Error()
+	}
+	if paseo.IsTitleGenerationMessage(ev.Message) {
+		details.TitleGeneration = true
+	}
+	return details
 }
 
 // deliver 在当前进程内完成投递。
@@ -188,16 +225,16 @@ func cmdHook(args []string) error {
 // 曾经这里有一条「先丢给常驻 daemon 异步发」的快路径，实测只省 78ms
 // （本地开销 45ms 两者相同，差的仅是一次约 80ms 的飞书往返），
 // 却要付出常驻服务、socket 生命周期与两套投递路径的代价，已移除。
-func deliver(hookSource string, raw []byte, ev event.Event, started time.Time) {
+func deliver(hookSource string, raw []byte, ev event.Event, started time.Time, paseoDetails paseoEventDetails) {
 	cfg, err := config.Load()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "acn: 加载配置失败: "+err.Error())
-		writeEventLog(hookSource, raw, &ev, false, "", nil, err, nil, started)
+		writeEventLog(hookSource, raw, &ev, false, "", nil, err, nil, started, paseoDetails)
 		return
 	}
 
 	report, err := notify.SendWithReport(context.Background(), cfg, ev)
-	writeEventLogWithConfig(cfg, hookSource, raw, &report.Event, report.SkippedReason, err, report.DeliveryResult, started)
+	writeEventLogWithConfig(cfg, hookSource, raw, &report.Event, report.SkippedReason, err, report.DeliveryResult, started, paseoDetails)
 	switch {
 	case err != nil:
 		fmt.Fprintln(os.Stderr, "acn: 推送失败: "+err.Error())
@@ -206,21 +243,28 @@ func deliver(hookSource string, raw []byte, ev event.Event, started time.Time) {
 	}
 }
 
-func writeEventLogWithConfig(cfg config.Config, hookSource string, raw []byte, ev *event.Event, skipped string, deliveryErr error, delivery []notify.DeliveryResult, started time.Time) {
+func writeEventLogWithConfig(cfg config.Config, hookSource string, raw []byte, ev *event.Event, skipped string, deliveryErr error, delivery []notify.DeliveryResult, started time.Time, paseoDetails paseoEventDetails) {
 	if !cfg.EventLogEnabled {
 		return
 	}
 	entry := eventlog.Entry{
-		Timestamp:       started,
-		HookSource:      hookSource,
-		RawPayload:      string(raw),
-		PaseoAgentID:    strings.TrimSpace(os.Getenv("PASEO_AGENT_ID")),
-		PaseoTerminalID: strings.TrimSpace(os.Getenv("PASEO_TERMINAL_ID")),
-		Event:           ev,
-		Skip:            skipped != "",
-		SkippedReason:   skipped,
-		Delivery:        delivery,
-		ElapsedMS:       time.Since(started).Milliseconds(),
+		Timestamp:             started,
+		HookSource:            hookSource,
+		RawPayload:            string(raw),
+		RawPayloadPreview:     eventlog.Preview(string(raw), 10),
+		PaseoAgentID:          strings.TrimSpace(os.Getenv("PASEO_AGENT_ID")),
+		PaseoTerminalID:       strings.TrimSpace(os.Getenv("PASEO_TERMINAL_ID")),
+		PaseoAgentName:        paseoDetails.AgentName,
+		PaseoAgentLookupError: paseoDetails.AgentLookupError,
+		PaseoTitleGeneration:  paseoDetails.TitleGeneration,
+		Event:                 ev,
+		Skip:                  skipped != "",
+		SkippedReason:         skipped,
+		Delivery:              delivery,
+		ElapsedMS:             time.Since(started).Milliseconds(),
+	}
+	if ev != nil {
+		entry.MessagePreview = eventlog.Preview(ev.Message, 10)
 	}
 	if deliveryErr != nil {
 		entry.DeliveryError = deliveryErr.Error()
@@ -230,22 +274,33 @@ func writeEventLogWithConfig(cfg config.Config, hookSource string, raw []byte, e
 	}
 }
 
-func writeEventLog(hookSource string, raw []byte, ev *event.Event, skip bool, skippedReason string, parseErr, configErr error, delivery []notify.DeliveryResult, started time.Time) {
+func writeEventLog(hookSource string, raw []byte, ev *event.Event, skip bool, skippedReason string, parseErr, configErr error, delivery []notify.DeliveryResult, started time.Time, details ...paseoEventDetails) {
 	cfg, err := config.Load()
 	if err != nil || !cfg.EventLogEnabled {
 		return
 	}
+	paseoDetails := paseoEventDetails{}
+	if len(details) > 0 {
+		paseoDetails = details[0]
+	}
 	entry := eventlog.Entry{
-		Timestamp:       started,
-		HookSource:      hookSource,
-		RawPayload:      string(raw),
-		PaseoAgentID:    strings.TrimSpace(os.Getenv("PASEO_AGENT_ID")),
-		PaseoTerminalID: strings.TrimSpace(os.Getenv("PASEO_TERMINAL_ID")),
-		Event:           ev,
-		Skip:            skip,
-		SkippedReason:   skippedReason,
-		Delivery:        delivery,
-		ElapsedMS:       time.Since(started).Milliseconds(),
+		Timestamp:             started,
+		HookSource:            hookSource,
+		RawPayload:            string(raw),
+		RawPayloadPreview:     eventlog.Preview(string(raw), 10),
+		PaseoAgentID:          strings.TrimSpace(os.Getenv("PASEO_AGENT_ID")),
+		PaseoTerminalID:       strings.TrimSpace(os.Getenv("PASEO_TERMINAL_ID")),
+		PaseoAgentName:        paseoDetails.AgentName,
+		PaseoAgentLookupError: paseoDetails.AgentLookupError,
+		PaseoTitleGeneration:  paseoDetails.TitleGeneration,
+		Event:                 ev,
+		Skip:                  skip,
+		SkippedReason:         skippedReason,
+		Delivery:              delivery,
+		ElapsedMS:             time.Since(started).Milliseconds(),
+	}
+	if ev != nil {
+		entry.MessagePreview = eventlog.Preview(ev.Message, 10)
 	}
 	if parseErr != nil {
 		entry.ParseError = parseErr.Error()
