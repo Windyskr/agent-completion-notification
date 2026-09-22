@@ -123,6 +123,8 @@ type Config struct {
 	Sources map[string]bool `json:"sources"`
 	// MinDurationSeconds 低于该耗时的任务不推送。
 	MinDurationSeconds int `json:"min_duration_seconds"`
+	// SkipUntitled 控制是否跳过取不到会话标题的任务完成通知。
+	SkipUntitled bool `json:"skip_untitled"`
 	// MaxMessageLength 限制通知中的回复原文字符数；0 表示不截断。
 	MaxMessageLength int `json:"max_message_length"`
 	// NotificationTimezone 控制通知正文中时间的时区；留空时使用机器本地时区。

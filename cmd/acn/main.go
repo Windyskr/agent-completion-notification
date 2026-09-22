@@ -91,6 +91,7 @@ const usage = `acn (Agent Completion Notification) — Agent 任务完成通知
   bark <on|off>          是否启用 Bark 渠道
   dingtalk|wecom|telegram|email|slack|teams <on|off> 是否启用对应渠道
   min-duration <秒>      低于该耗时不推送，0 为不限
+  skip-untitled <on|off> 跳过取不到会话标题的完成通知，默认 off
   max-message-length <字符数> 通知正文最大长度，默认 1000，0 为不限
   notification-timezone <时区|local> 通知时间的 IANA 时区，默认使用机器本地时区
   ignore-dir <路径|off>  忽略目录及其子目录；off 清空全部规则
@@ -403,6 +404,7 @@ func cmdStatus() error {
 	if cfg.MinDurationSeconds > 0 {
 		fmt.Printf("  · 耗时阈值：%ds\n", cfg.MinDurationSeconds)
 	}
+	fmt.Printf("  · 跳过无标题任务：%s\n", onOff(cfg.SkipUntitled))
 	if cfg.MaxMessageLength == 0 {
 		fmt.Println("  · 通知正文长度：不限")
 	} else {
@@ -565,6 +567,12 @@ func cmdConfig(args []string) error {
 			return err
 		}
 		cfg.MinDurationSeconds = n
+	case "skip-untitled":
+		on, err := parseBool(value)
+		if err != nil {
+			return err
+		}
+		cfg.SkipUntitled = on
 	case "max-message-length":
 		n, err := parseNonNegativeInt(key, value)
 		if err != nil {

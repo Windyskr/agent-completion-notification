@@ -142,6 +142,7 @@ acn config claude-idle-reminder <on|off>       Notify after 60 seconds without i
 acn config claude-failure-alert <on|off>       Notify when a Claude turn ends because of an API error; default: on
 acn config codex-attention <on|off>            Notify when Codex requests tool permission; default: on
 acn config event-log <on|off>                  Record complete hook-processing logs; default: off
+acn config skip-untitled <on|off>              Skip completion notifications without a session title; default: off
 ```
 
 For example, if the computer uses Japan time but notifications should show Shanghai time:
@@ -155,6 +156,8 @@ Use `acn config notification-timezone local` to restore the machine's local time
 Use `acn config event-log on` to write each hook's raw JSON, ten-character previews, Paseo agent IDs and names, terminal IDs, the complete normalized event, skip reason, per-channel delivery results, errors, and elapsed time to `~/.acn/events.jsonl`. The file uses mode `0600`; raw payloads can contain prompts, commands, and agent replies. Use `acn config event-log off` to stop subsequent records while retaining existing entries.
 
 Notification titles use the session name by default. Claude Code reads the `ai-title` record from its transcript. Codex looks up the hook `session_id` in `$CODEX_HOME/session_index.jsonl` (by default, `~/.codex/session_index.jsonl`). For Codex started by Paseo, acn fills the title from the Paseo Agent record and skips the temporary task that Paseo uses to generate a title. On `session.idle`, the OpenCode plugin reads the session title and latest assistant message. When a session name is unavailable, acn uses the enabled device, agent, and project-name prefixes; when all prefixes are disabled, it shows `Task complete` to avoid an empty title.
+
+Use `acn config skip-untitled on` to filter completion notifications without a session title, such as temporary background tasks. This setting is disabled by default; permission and choice notifications remain enabled.
 
 Device, agent, and project names are disabled in titles by default, while existing settings remain valid. When explicitly enabled, they become session-name prefixes, for example `MacBookPro-Codex-acn-Improve component ablation plan`. Each agent name can be configured independently. Pass `default` to restore its default name; setting an agent name automatically enables agent-name display.
 

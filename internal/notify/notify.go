@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -53,6 +54,9 @@ func Gate(cfg config.Config, ev event.Event) string {
 	}
 	if directory, ok := cfg.IgnoredDirectory(ev.Cwd); ok {
 		return "目录已忽略：" + directory
+	}
+	if cfg.SkipUntitled && ev.Kind == event.KindCompletion && strings.TrimSpace(ev.SessionName) == "" {
+		return "会话标题为空（skip-untitled on）"
 	}
 	// 等待介入事件有独立开关：Claude 的选择与权限、Codex 的权限默认开，
 	// Claude 的 60 秒空闲提醒默认关。

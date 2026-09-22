@@ -158,6 +158,7 @@ acn config claude-idle-reminder <on|off> Claude 回合结束 60 秒无输入时�
 acn config claude-failure-alert <on|off> Claude 因 API 错误终止回合时推送，默认 on
 acn config codex-attention <on|off>      Codex 等待工具权限审批时推送，默认 on
 acn config event-log <on|off>             记录完整 hook 处理日志，默认 off
+acn config skip-untitled <on|off>         跳过无会话标题的完成通知，默认 off
 ```
 
 例如，机器使用日本时区、但希望通知显示上海时间：
@@ -181,6 +182,9 @@ acn config notification-timezone Asia/Shanghai
 在 `session.idle` 时读取会话标题和最后一条 assistant 消息。取不到会话名时
 使用已开启的设备、Agent、项目名前缀；所有前缀均关闭时显示 `任务完成`，避免旧版本
 或临时会话产生空标题。
+
+如果希望完全过滤后台临时任务，可使用 `acn config skip-untitled on` 跳过取不到会话标题的
+完成通知。该开关默认关闭，权限确认、等待选择等需要用户处理的通知不受影响。
 
 设备名、Agent 名和项目名默认均不参与标题，但原有配置仍然保留。显式开启后会作为
 会话名前缀，例如 `MacBookPro-Codex-acn-完善组件消融实验方案`。三个 Agent 名均可

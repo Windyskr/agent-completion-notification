@@ -44,6 +44,19 @@ func TestGateSkipsThresholdWhenDurationUnknown(t *testing.T) {
 	}
 }
 
+func TestGateSkipsUntitledCompletionWhenEnabled(t *testing.T) {
+	cfg := config.Config{SkipUntitled: true}
+	if reason := Gate(cfg, event.Event{Source: event.SourceCodex}); !strings.Contains(reason, "会话标题为空") {
+		t.Errorf("无标题完成任务未被跳过，原因 = %q", reason)
+	}
+	if reason := Gate(cfg, event.Event{Source: event.SourceCodex, SessionName: "正常会话"}); reason != "" {
+		t.Errorf("有标题任务被跳过，原因 = %q", reason)
+	}
+	if reason := Gate(cfg, event.Event{Source: event.SourceCodex, Kind: event.KindPermission}); reason != "" {
+		t.Errorf("权限确认被跳过，原因 = %q", reason)
+	}
+}
+
 // 被 Gate 拦下时不得发出任何请求。
 func TestSendSkipsWithoutHTTPCall(t *testing.T) {
 	var hit bool
