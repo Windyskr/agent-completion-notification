@@ -21,6 +21,7 @@ import (
 	"github.com/windyskr/agent-completion-notification/internal/event"
 	"github.com/windyskr/agent-completion-notification/internal/eventlog"
 	"github.com/windyskr/agent-completion-notification/internal/hook"
+	"github.com/windyskr/agent-completion-notification/internal/hookdedup"
 	"github.com/windyskr/agent-completion-notification/internal/install"
 	"github.com/windyskr/agent-completion-notification/internal/notify"
 	"github.com/windyskr/agent-completion-notification/internal/paseo"
@@ -180,6 +181,15 @@ func cmdHook(args []string) error {
 	if skip {
 		writeEventLog(args[0], raw, &ev, true, "上游事件无需推送", nil, nil, nil, started)
 		return nil
+	}
+	claimed, release, claimErr := hookdedup.Claim(args[0], ev.SessionID)
+	if claimErr != nil {
+		fmt.Fprintln(os.Stderr, "acn: 并发事件判定失败: "+claimErr.Error())
+	} else if !claimed {
+		writeEventLog(args[0], raw, &ev, true, "重复 hook 事件", nil, nil, nil, started)
+		return nil
+	} else {
+		defer release()
 	}
 	paseoDetails := enrichPaseoEvent(args[0], &ev)
 	if paseoDetails.TitleGeneration {
