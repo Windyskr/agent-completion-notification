@@ -206,10 +206,10 @@ type paseoEventDetails struct {
 	TitleGeneration  bool
 }
 
-// enrichPaseoEvent 回填 Paseo 保存的 Agent 名称。Paseo 通过 app-server 运行
-// Codex，不写入 Codex 的 session_index.jsonl，因此仅在原生名称为空时查询。
+// enrichPaseoEvent 回填 Paseo 保存的 Agent 名称。Paseo 运行的 Claude Code 和
+// Codex 都可能不在各自 CLI 的会话标题索引中，因此仅在原生名称为空时查询。
 func enrichPaseoEvent(hookSource string, ev *event.Event) paseoEventDetails {
-	if hookSource != "codex" || strings.TrimSpace(ev.SessionName) != "" {
+	if (hookSource != "codex" && hookSource != "claude") || strings.TrimSpace(ev.SessionName) != "" {
 		return paseoEventDetails{}
 	}
 	agentID := strings.TrimSpace(os.Getenv("PASEO_AGENT_ID"))
@@ -225,7 +225,7 @@ func enrichPaseoEvent(hookSource string, ev *event.Event) paseoEventDetails {
 	if err != nil {
 		details.AgentLookupError = err.Error()
 	}
-	if paseo.IsTitleGenerationMessage(ev.Message) {
+	if hookSource == "codex" && paseo.IsTitleGenerationMessage(ev.Message) {
 		details.TitleGeneration = true
 	}
 	return details

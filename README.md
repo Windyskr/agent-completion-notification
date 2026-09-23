@@ -177,8 +177,8 @@ acn config notification-timezone Asia/Shanghai
 
 通知标题默认直接使用会话名，例如 `完善组件消融实验方案`。Claude Code 从 transcript
 中的 `ai-title` 记录读取；Codex 用 hook 的 `session_id` 查询
-`$CODEX_HOME/session_index.jsonl`（默认 `~/.codex/session_index.jsonl`）。Paseo 启动的 Codex
-会从 Paseo Agent 记录回填会话名称；Paseo 自动生成标题时使用的临时任务会自动跳过通知。OpenCode 由插件
+`$CODEX_HOME/session_index.jsonl`（默认 `~/.codex/session_index.jsonl`）。Paseo 启动的 Claude Code
+和 Codex 会从 Paseo Agent 记录回填会话名称；Paseo 自动生成标题时使用的 Codex 临时任务会自动跳过通知。OpenCode 由插件
 在 `session.idle` 时读取会话标题和最后一条 assistant 消息。取不到会话名时
 使用已开启的设备、Agent、项目名前缀；所有前缀均关闭时显示 `任务完成`，避免旧版本
 或临时会话产生空标题。
