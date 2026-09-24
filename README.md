@@ -5,6 +5,13 @@
 推送 Agent（Claude Code、Codex、OpenCode）完成通知到 Bark、飞书、钉钉、企微、Slack、Teams、TG 等。
 通过原生 hook / plugin 接入，单文件极小体积，一行命令即可安装，无常驻进程，无 GUI。
 
+### 完整支持 Paseo
+
+使用 [Paseo](https://paseo.sh/) 启动 Claude Code 或 Codex 时，无需额外配置：acn 会识别
+Paseo Agent，使用 Paseo 中的会话名称作为通知标题。Paseo 用于自动生成标题的 Codex 临时任务
+会自动跳过通知；同一任务被 Paseo 重复转发时仅发送一条通知。配合
+`acn config skip-untitled on`，还可以过滤其余没有会话标题的后台任务。
+
 ![acn 接收 Agent 完成事件并分发到多种通知渠道](assets/acn-flow.png)
 
 

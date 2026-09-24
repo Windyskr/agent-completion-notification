@@ -4,6 +4,10 @@
 
 Send completion notifications from AI agents—Claude Code, Codex, and OpenCode—to Bark, Feishu, DingTalk, WeCom, Slack, Teams, Telegram, and email. acn integrates through native hooks and plugins: it is a tiny single binary with one-command setup, no background process, and no GUI.
 
+### Full Paseo support
+
+No additional setup is required when [Paseo](https://paseo.sh/) launches Claude Code or Codex. acn identifies the Paseo Agent and uses its name as the notification title. It automatically skips the temporary Codex task that Paseo uses to generate titles, and sends one notification when Paseo forwards the same task more than once. Enable `acn config skip-untitled on` to filter any remaining background tasks without a session title.
+
 ![acn collects agent completion events and sends them to notification channels](assets/acn-flow.en.png)
 
 ## Quick start
