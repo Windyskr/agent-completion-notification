@@ -36,8 +36,9 @@ type contentBlock struct {
 	Text string `json:"text"`
 }
 
-// FromPayload 由 Stop 载荷组装 Event。transcript 读取失败时降级：
-// 仍然产出事件，只是缺少回复正文与耗时。
+// FromPayload 由 Stop 载荷组装 Event。Claude Code 的 Stop 载荷提供当前回复时，
+// 优先使用它；Paseo 等调用方可能在 transcript 写入完成前触发 hook。transcript
+// 仍用于读取会话标题、耗时与缺失字段的回退值。
 func FromPayload(p hook.StopPayload) event.Event {
 	ev := event.Event{
 		Source:    event.SourceClaude,
@@ -47,9 +48,14 @@ func FromPayload(p hook.StopPayload) event.Event {
 
 	var d digest
 	if err := hook.ScanTail(p.TranscriptPath, hook.MaxScanBytes, d.absorb); err != nil {
+		ev.Message = strings.TrimSpace(p.LastAssistantMessage)
 		return ev
 	}
-	ev.Message = d.reply
+	if message := strings.TrimSpace(p.LastAssistantMessage); message != "" {
+		ev.Message = message
+	} else {
+		ev.Message = d.reply
+	}
 	ev.SessionName = d.sessionName
 	if ev.Cwd == "" {
 		ev.Cwd = d.cwd

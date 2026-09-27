@@ -6,7 +6,7 @@ Send completion notifications from AI agentsâ€”Claude Code, Codex, and OpenCodeâ
 
 ### Full Paseo support
 
-No additional setup is required when [Paseo](https://paseo.sh/) launches Claude Code or Codex. acn identifies the Paseo Agent and uses its name as the notification title. It automatically skips the temporary Codex task that Paseo uses to generate titles, and sends one notification when Paseo forwards the same task more than once. Enable `acn config skip-untitled on` to filter any remaining background tasks without a session title.
+No additional setup is required when [Paseo](https://paseo.sh/) launches Claude Code or Codex. acn identifies the Paseo Agent and uses its name as the notification title. It automatically skips the temporary Codex task that Paseo uses to generate titles, and sends one notification when Paseo forwards the same task more than once. Claude Code and Codex both use the current reply in the Stop payload, preventing a prior reply from being sent when Paseo triggers the hook before the transcript is written. Enable `acn config skip-untitled on` to filter any remaining background tasks without a session title.
 
 ![acn collects agent completion events and sends them to notification channels](assets/acn-flow.en.png)
 

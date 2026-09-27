@@ -70,6 +70,31 @@ func TestFromPayloadExtractsReplyAndDuration(t *testing.T) {
 	}
 }
 
+func TestFromPayloadPrefersCurrentReplyFromStopPayload(t *testing.T) {
+	path := writeTranscript(t,
+		userLine("2026-07-26T10:00:00.000Z", "上一轮请求"),
+		assistantLine("2026-07-26T10:00:10.000Z", "上一轮回复"),
+	)
+
+	ev := FromPayload(hook.StopPayload{
+		TranscriptPath:       path,
+		LastAssistantMessage: "当前回复",
+	})
+	if ev.Message != "当前回复" {
+		t.Errorf("回复 = %q，期望 Stop 载荷中的当前回复", ev.Message)
+	}
+}
+
+func TestFromPayloadUsesStopReplyWhenTranscriptMissing(t *testing.T) {
+	ev := FromPayload(hook.StopPayload{
+		TranscriptPath:       "/nonexistent/transcript.jsonl",
+		LastAssistantMessage: "当前回复",
+	})
+	if ev.Message != "当前回复" {
+		t.Errorf("回复 = %q，期望 Stop 载荷中的当前回复", ev.Message)
+	}
+}
+
 // 只有 tool_result 而无真实用户输入时（例如续跑），耗时应为未知而非算出个荒谬的值。
 func TestDurationUnknownWithoutUserPrompt(t *testing.T) {
 	path := writeTranscript(t,
