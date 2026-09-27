@@ -8,7 +8,8 @@
 ### 完整支持 Paseo
 
 使用 [Paseo](https://paseo.sh/) 启动 Claude Code 或 Codex 时，无需额外配置：acn 会识别
-Paseo Agent，使用 Paseo 中的会话名称作为通知标题。Paseo 用于自动生成标题的 Codex 临时任务
+Paseo Agent，优先使用所属 Workspace 标题作为通知标题；Workspace 标题不可用时回退到 Agent 名称。
+Paseo 用于自动生成标题的 Codex 临时任务
 会自动跳过通知；同一任务被 Paseo 重复转发时仅发送一条通知。配合
 `acn config skip-untitled on`，还可以过滤其余没有会话标题的后台任务。Claude Code 与 Codex
 均直接使用 Stop 载荷中的当前回复，避免 Paseo 在 transcript 落盘前触发 hook 时发送上一轮内容。
@@ -179,14 +180,15 @@ acn config notification-timezone Asia/Shanghai
 正文中的“完成时间”，不会影响任务耗时或 webhook 签名时间戳。
 
 使用 `acn config event-log on` 可将每次 hook 的原始 JSON、前十个字符预览、Paseo Agent
-标识与名称、终端标识、解析后的完整事件、跳过原因、通知渠道逐项结果、错误信息和处理耗时写入
+标识与名称、Workspace 标题、终端标识、解析后的完整事件、跳过原因、通知渠道逐项结果、错误信息和处理耗时写入
 `~/.acn/events.jsonl`。日志文件权限为 0600，原始载荷可能包含提示词、命令和回复内容，
 请按敏感数据管理。`acn config event-log off` 可停止后续记录，已有日志会保留。
 
 通知标题默认直接使用会话名，例如 `完善组件消融实验方案`。Claude Code 从 transcript
 中的 `ai-title` 记录读取；Codex 用 hook 的 `session_id` 查询
 `$CODEX_HOME/session_index.jsonl`（默认 `~/.codex/session_index.jsonl`）。Paseo 启动的 Claude Code
-和 Codex 会从 Paseo Agent 记录回填会话名称；Paseo 自动生成标题时使用的 Codex 临时任务会自动跳过通知。OpenCode 由插件
+和 Codex 会优先使用 Agent 所属 Workspace 的标题；无法读取 Workspace 标题时回退到 Paseo Agent 名称。
+Paseo 自动生成标题时使用的 Codex 临时任务会自动跳过通知。OpenCode 由插件
 在 `session.idle` 时读取会话标题和最后一条 assistant 消息。取不到会话名时
 使用已开启的设备、Agent、项目名前缀；所有前缀均关闭时显示 `任务完成`，避免旧版本
 或临时会话产生空标题。

@@ -201,13 +201,15 @@ func cmdHook(args []string) error {
 }
 
 type paseoEventDetails struct {
-	AgentName        string
-	AgentLookupError string
-	TitleGeneration  bool
+	AgentName            string
+	AgentLookupError     string
+	WorkspaceTitle       string
+	WorkspaceLookupError string
+	TitleGeneration      bool
 }
 
-// enrichPaseoEvent 回填 Paseo 保存的 Agent 名称。Paseo 运行的 Claude Code 和
-// Codex 都可能不在各自 CLI 的会话标题索引中，因此仅在原生名称为空时查询。
+// enrichPaseoEvent 回填 Paseo 的 Workspace 标题。Agent 名称通常来自初始 prompt，
+// 仅在 Workspace 标题不可用时作为回退。
 func enrichPaseoEvent(hookSource string, ev *event.Event) paseoEventDetails {
 	if (hookSource != "codex" && hookSource != "claude") || strings.TrimSpace(ev.SessionName) != "" {
 		return paseoEventDetails{}
@@ -216,14 +218,22 @@ func enrichPaseoEvent(hookSource string, ev *event.Event) paseoEventDetails {
 	if agentID == "" {
 		return paseoEventDetails{}
 	}
-	agentName, err := paseo.AgentName(agentID)
-	details := paseoEventDetails{AgentName: agentName}
-	if err == nil && agentName != "" {
-		ev.SessionName = agentName
+	workspaceTitle, workspaceErr := paseo.WorkspaceTitle(agentID)
+	details := paseoEventDetails{WorkspaceTitle: workspaceTitle}
+	if workspaceErr != nil {
+		details.WorkspaceLookupError = workspaceErr.Error()
+	}
+	if workspaceTitle != "" {
+		ev.SessionName = workspaceTitle
 		return details
 	}
+	agentName, err := paseo.AgentName(agentID)
+	details.AgentName = agentName
 	if err != nil {
 		details.AgentLookupError = err.Error()
+	} else if agentName != "" {
+		ev.SessionName = agentName
+		return details
 	}
 	if hookSource == "codex" && paseo.IsTitleGenerationMessage(ev.Message) {
 		details.TitleGeneration = true
@@ -259,20 +269,22 @@ func writeEventLogWithConfig(cfg config.Config, hookSource string, raw []byte, e
 		return
 	}
 	entry := eventlog.Entry{
-		Timestamp:             started,
-		HookSource:            hookSource,
-		RawPayload:            string(raw),
-		RawPayloadPreview:     eventlog.Preview(string(raw), 10),
-		PaseoAgentID:          strings.TrimSpace(os.Getenv("PASEO_AGENT_ID")),
-		PaseoTerminalID:       strings.TrimSpace(os.Getenv("PASEO_TERMINAL_ID")),
-		PaseoAgentName:        paseoDetails.AgentName,
-		PaseoAgentLookupError: paseoDetails.AgentLookupError,
-		PaseoTitleGeneration:  paseoDetails.TitleGeneration,
-		Event:                 ev,
-		Skip:                  skipped != "",
-		SkippedReason:         skipped,
-		Delivery:              delivery,
-		ElapsedMS:             time.Since(started).Milliseconds(),
+		Timestamp:                 started,
+		HookSource:                hookSource,
+		RawPayload:                string(raw),
+		RawPayloadPreview:         eventlog.Preview(string(raw), 10),
+		PaseoAgentID:              strings.TrimSpace(os.Getenv("PASEO_AGENT_ID")),
+		PaseoTerminalID:           strings.TrimSpace(os.Getenv("PASEO_TERMINAL_ID")),
+		PaseoAgentName:            paseoDetails.AgentName,
+		PaseoAgentLookupError:     paseoDetails.AgentLookupError,
+		PaseoWorkspaceTitle:       paseoDetails.WorkspaceTitle,
+		PaseoWorkspaceLookupError: paseoDetails.WorkspaceLookupError,
+		PaseoTitleGeneration:      paseoDetails.TitleGeneration,
+		Event:                     ev,
+		Skip:                      skipped != "",
+		SkippedReason:             skipped,
+		Delivery:                  delivery,
+		ElapsedMS:                 time.Since(started).Milliseconds(),
 	}
 	if ev != nil {
 		entry.MessagePreview = eventlog.Preview(ev.Message, 10)
@@ -295,20 +307,22 @@ func writeEventLog(hookSource string, raw []byte, ev *event.Event, skip bool, sk
 		paseoDetails = details[0]
 	}
 	entry := eventlog.Entry{
-		Timestamp:             started,
-		HookSource:            hookSource,
-		RawPayload:            string(raw),
-		RawPayloadPreview:     eventlog.Preview(string(raw), 10),
-		PaseoAgentID:          strings.TrimSpace(os.Getenv("PASEO_AGENT_ID")),
-		PaseoTerminalID:       strings.TrimSpace(os.Getenv("PASEO_TERMINAL_ID")),
-		PaseoAgentName:        paseoDetails.AgentName,
-		PaseoAgentLookupError: paseoDetails.AgentLookupError,
-		PaseoTitleGeneration:  paseoDetails.TitleGeneration,
-		Event:                 ev,
-		Skip:                  skip,
-		SkippedReason:         skippedReason,
-		Delivery:              delivery,
-		ElapsedMS:             time.Since(started).Milliseconds(),
+		Timestamp:                 started,
+		HookSource:                hookSource,
+		RawPayload:                string(raw),
+		RawPayloadPreview:         eventlog.Preview(string(raw), 10),
+		PaseoAgentID:              strings.TrimSpace(os.Getenv("PASEO_AGENT_ID")),
+		PaseoTerminalID:           strings.TrimSpace(os.Getenv("PASEO_TERMINAL_ID")),
+		PaseoAgentName:            paseoDetails.AgentName,
+		PaseoAgentLookupError:     paseoDetails.AgentLookupError,
+		PaseoWorkspaceTitle:       paseoDetails.WorkspaceTitle,
+		PaseoWorkspaceLookupError: paseoDetails.WorkspaceLookupError,
+		PaseoTitleGeneration:      paseoDetails.TitleGeneration,
+		Event:                     ev,
+		Skip:                      skip,
+		SkippedReason:             skippedReason,
+		Delivery:                  delivery,
+		ElapsedMS:                 time.Since(started).Milliseconds(),
 	}
 	if ev != nil {
 		entry.MessagePreview = eventlog.Preview(ev.Message, 10)
