@@ -16,6 +16,9 @@ import (
 	"github.com/windyskr/agent-completion-notification/internal/message"
 )
 
+// maxContentBytes 是企微 markdown 消息 content 的上限；超出会被整条拒收。
+const maxContentBytes = 4096
+
 type Notifier struct {
 	cfg    config.WeCom
 	client *http.Client
@@ -36,7 +39,11 @@ func (n *Notifier) Send(ctx context.Context, msg message.Message) error {
 		return fmt.Errorf("企微 webhook 地址格式无效")
 	}
 	payload := map[string]any{"msgtype": "markdown", "markdown": map[string]string{
-		"content": msg.Body(message.Format{Header: "### " + msg.Title + "\n"}),
+		"content": msg.Body(message.Format{
+			Header:         "### " + msg.Title + "\n",
+			HardLineBreaks: true,
+			MaxBytes:       maxContentBytes,
+		}),
 	}}
 	body, err := json.Marshal(payload)
 	if err != nil {

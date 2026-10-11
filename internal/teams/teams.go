@@ -50,7 +50,7 @@ func (n *Notifier) Send(ctx context.Context, msg message.Message) error {
 		Summary:    msg.Title,
 		ThemeColor: "0076D7",
 		Title:      msg.Title,
-		Sections:   []section{{Text: msg.Body(message.Format{}), Markdown: true}},
+		Sections:   []section{{Text: msg.Body(message.Format{HardLineBreaks: true}), Markdown: true}},
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {

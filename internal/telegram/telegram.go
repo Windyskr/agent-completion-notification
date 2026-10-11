@@ -16,6 +16,9 @@ import (
 	"github.com/windyskr/agent-completion-notification/internal/message"
 )
 
+// maxTextLength 是 sendMessage 的 text 上限，按 UTF-16 码元计；超出会被整条拒收。
+const maxTextLength = 4096
+
 type Notifier struct {
 	cfg    config.Telegram
 	client *http.Client
@@ -34,7 +37,7 @@ func (n *Notifier) Send(ctx context.Context, msg message.Message) error {
 	endpoint := "https://api.telegram.org/bot" + url.PathEscape(token) + "/sendMessage"
 	payload := map[string]any{
 		"chat_id":                  chatID,
-		"text":                     msg.Body(message.Format{Header: msg.Title + "\n\n"}),
+		"text":                     msg.Body(message.Format{Header: msg.Title + "\n\n", MaxUTF16: maxTextLength}),
 		"disable_web_page_preview": true,
 	}
 	body, err := json.Marshal(payload)

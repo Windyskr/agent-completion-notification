@@ -56,6 +56,9 @@ func TestSendPostsMessageCard(t *testing.T) {
 			t.Errorf("Teams 正文缺少 %q: %s", want, text)
 		}
 	}
+	if !strings.Contains(text, "2026-08-03 12:00:00  \n目录：/work/acn") {
+		t.Errorf("Teams markdown 详情行需要强制换行: %q", text)
+	}
 	if section["markdown"] != true {
 		t.Errorf("markdown = %v, 期望 true", section["markdown"])
 	}

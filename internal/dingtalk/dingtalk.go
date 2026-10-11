@@ -55,7 +55,7 @@ func (n *Notifier) Send(ctx context.Context, msg message.Message) error {
 		"msgtype": "markdown",
 		"markdown": map[string]string{
 			"title": msg.Title,
-			"text":  msg.Body(message.Format{Header: "### " + msg.Title + "\n\n"}),
+			"text":  msg.Body(message.Format{Header: "### " + msg.Title + "\n\n", HardLineBreaks: true}),
 		},
 	}
 	body, err := json.Marshal(payload)
