@@ -295,7 +295,8 @@ func checkTeams(cfg config.Config) check {
 	return check{"Teams webhook", levelOK, strings.TrimSpace(cfg.Teams.WebhookURL), ""}
 }
 
-// checkDelivery 真的推一条，走与 hook 完全相同的路径。
+// checkDelivery 真的推一条，走与 hook 相同的渠道与文案；但跳过推送规则，
+// 否则 skip-untitled、来源开关等合法配置会让自检永远无法验证渠道。
 func checkDelivery(cfg config.Config) check {
 	if !cfg.DeliveryReady() {
 		return check{
@@ -312,12 +313,12 @@ func checkDelivery(cfg config.Config) check {
 		DurationMS: 42_000,
 	}
 
-	skipped, err := notify.Send(context.Background(), cfg, ev)
+	report, err := notify.Deliver(context.Background(), cfg, ev)
 	switch {
 	case err != nil:
 		return check{"实际推送", levelFail, err.Error(), "检查通知渠道地址与网络"}
-	case skipped != "":
-		return check{"实际推送", levelWarn, "未推送（" + skipped + "）", ""}
+	case report.SkippedReason != "":
+		return check{"实际推送", levelWarn, "未推送（" + report.SkippedReason + "）", ""}
 	}
 	return check{"实际推送", levelOK, "已发出，请确认已配置渠道是否收到", ""}
 }

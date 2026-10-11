@@ -100,11 +100,17 @@ func Send(ctx context.Context, cfg config.Config, ev event.Event) (skipped strin
 
 // SendWithReport 在发送后返回过滤判定和每个渠道的投递结果。
 func SendWithReport(ctx context.Context, cfg config.Config, ev event.Event) (Report, error) {
-	report := Report{Event: ev}
 	if reason := Gate(cfg, ev); reason != "" {
-		report.SkippedReason = reason
-		return report, nil
+		return Report{Event: ev, SkippedReason: reason}, nil
 	}
+	return Deliver(ctx, cfg, ev)
+}
+
+// Deliver 不经 Gate，直接投递到全部已启用渠道。acn doctor 用它验证链路：
+// 自检要回答的是「渠道通不通」，不应被来源开关、忽略目录、耗时阈值或
+// skip-untitled 等推送规则拦下。
+func Deliver(ctx context.Context, cfg config.Config, ev event.Event) (Report, error) {
+	report := Report{Event: ev}
 	notifiers := configuredNotifiers(cfg)
 	if len(notifiers) == 0 {
 		report.SkippedReason = "未配置已启用的通知渠道"

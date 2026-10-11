@@ -284,3 +284,34 @@ func TestSendPropagatesFailure(t *testing.T) {
 		t.Error("飞书业务失败应当上报")
 	}
 }
+
+// Deliver 供 doctor 自检使用，不受 Gate 的推送规则影响。
+func TestDeliverBypassesGate(t *testing.T) {
+	var hit bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hit = true
+		io.WriteString(w, `{"code":0}`)
+	}))
+	defer srv.Close()
+
+	cfg := config.Config{
+		Feishu:       config.Feishu{WebhookURL: srv.URL},
+		Sources:      map[string]bool{"claude": false},
+		SkipUntitled: true,
+	}
+	ev := event.Event{Source: event.SourceClaude}
+	if reason := Gate(cfg, ev); reason == "" {
+		t.Fatal("前提不成立：该事件应被 Gate 拦下")
+	}
+
+	report, err := Deliver(context.Background(), cfg, ev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.SkippedReason != "" || !hit {
+		t.Errorf("Deliver 未投递: skipped=%q hit=%v", report.SkippedReason, hit)
+	}
+	if len(report.DeliveryResult) != 1 || !report.DeliveryResult[0].Sent {
+		t.Errorf("投递结果 = %+v", report.DeliveryResult)
+	}
+}
