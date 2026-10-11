@@ -66,6 +66,16 @@ func FromPayload(p hook.StopPayload) event.Event {
 	return ev
 }
 
+// transcriptTitle 读取会话标题（最后一条 ai-title），供没有 Stop 载荷的等待介入
+// 事件使用。transcript 不可读时返回空串。
+func transcriptTitle(path string) string {
+	var d digest
+	if err := hook.ScanTail(path, hook.MaxScanBytes, d.absorb); err != nil {
+		return ""
+	}
+	return d.sessionName
+}
+
 // digest 是从 transcript 中提取的最后一轮信息。正向扫描即可取到「最后」的记录，
 // 无需反向解析。
 type digest struct {

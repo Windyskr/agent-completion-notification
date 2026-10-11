@@ -11,18 +11,20 @@ import (
 // 选择载荷要带上问题文本与全部选项，手机端才能直接做决定。
 func TestFromQuestionPayload(t *testing.T) {
 	payload := hook.PreToolUsePayload{
-		SessionID: "s1",
-		Cwd:       "/work/acn",
-		ToolName:  "AskUserQuestion",
-		ToolInput: []byte(`{"questions":[{"question":"是否现在执行 pr-pull？","header":"Homebrew","options":[{"label":"立即执行"},{"label":"先看 PR"}]}]}`),
+		SessionID:      "s1",
+		TranscriptPath: writeTranscript(t, aiTitleLine("发布 v1.5.0")),
+		Cwd:            "/work/acn",
+		ToolName:       "AskUserQuestion",
+		ToolInput:      []byte(`{"questions":[{"question":"是否现在执行 pr-pull？","header":"Homebrew","options":[{"label":"立即执行"},{"label":"先看 PR"}]}]}`),
 	}
 
 	ev := FromQuestionPayload(payload)
 	if ev.Kind != event.KindChoice {
 		t.Errorf("Kind = %q, 期望 %q", ev.Kind, event.KindChoice)
 	}
-	if ev.SessionName != "等待选择" {
-		t.Errorf("SessionName = %q, 期望 等待选择", ev.SessionName)
+	// 会话名是 transcript 里的真实标题，类别词由渲染层根据 Kind 加在标题前。
+	if ev.SessionName != "发布 v1.5.0" {
+		t.Errorf("SessionName = %q, 期望 transcript 中的会话标题", ev.SessionName)
 	}
 	for _, want := range []string{"是否现在执行 pr-pull？", "选项：立即执行 / 先看 PR"} {
 		if !strings.Contains(ev.Message, want) {
@@ -56,6 +58,9 @@ func TestFromQuestionPayloadMalformed(t *testing.T) {
 	if ev.Kind != event.KindChoice || ev.Message == "" {
 		t.Errorf("损坏载荷应有兜底文案: %+v", ev)
 	}
+	if ev.SessionName != "" {
+		t.Errorf("读不到 transcript 时会话名应为空，得到 %q", ev.SessionName)
+	}
 }
 
 // 权限与空闲各映射到对应类别；其余类型不推送。
@@ -73,6 +78,7 @@ func TestFromNotificationPayload(t *testing.T) {
 	}
 	for _, c := range cases {
 		ev, ok := FromNotificationPayload(hook.NotificationPayload{
+			TranscriptPath:   writeTranscript(t, aiTitleLine("排查构建失败")),
 			Cwd:              "/w",
 			Message:          "Claude needs your permission",
 			NotificationType: c.notificationType,
@@ -90,6 +96,9 @@ func TestFromNotificationPayload(t *testing.T) {
 		if ev.Message != "Claude needs your permission" {
 			t.Errorf("%q Message = %q, 应保留原始 message", c.notificationType, ev.Message)
 		}
+		if ev.SessionName != "排查构建失败" {
+			t.Errorf("%q SessionName = %q, 期望 transcript 中的会话标题", c.notificationType, ev.SessionName)
+		}
 	}
 }
 
@@ -98,5 +107,22 @@ func TestFromNotificationPayloadEmptyMessage(t *testing.T) {
 	ev, ok := FromNotificationPayload(hook.NotificationPayload{NotificationType: "idle_prompt"})
 	if !ok || ev.Message == "" {
 		t.Errorf("空闲事件应有兜底文案: ok=%v msg=%q", ok, ev.Message)
+	}
+}
+
+// 异常终止优先展示错误详情，并带上会话标题。
+func TestFromStopFailurePayload(t *testing.T) {
+	ev := FromStopFailurePayload(hook.StopFailurePayload{
+		SessionID:            "s1",
+		TranscriptPath:       writeTranscript(t, aiTitleLine("迁移数据库")),
+		Error:                "rate_limit",
+		ErrorDetails:         "429 Too Many Requests",
+		LastAssistantMessage: "API Error",
+	})
+	if ev.Kind != event.KindFailure || ev.SessionName != "迁移数据库" || ev.Message != "429 Too Many Requests" {
+		t.Errorf("异常终止事件 = %+v", ev)
+	}
+	if got := FromStopFailurePayload(hook.StopFailurePayload{}).Message; got == "" {
+		t.Error("缺少错误信息时应有兜底文案")
 	}
 }

@@ -27,7 +27,9 @@ func render(cfg config.Config, ev event.Event, now time.Time) message.Message {
 }
 
 // title 默认使用会话名；设备、Agent 与项目名可按配置作为前缀。
-// 取不到会话名时使用已启用的前缀，全部为空则退回通用标题。
+// 等待介入与异常终止事件以类别词开头，如「权限确认 · 修复登录问题」：手机通知
+// 的标题过长时截掉的是末尾，类别词放在最前才能一眼看出要做什么。
+// 取不到会话名时使用已启用的前缀，全部为空则退回类别词或通用标题。
 func title(cfg config.Config, ev event.Event) string {
 	parts := make([]string, 0, 4)
 	if cfg.ShowDeviceName {
@@ -43,13 +45,25 @@ func title(cfg config.Config, ev event.Event) string {
 			parts = append(parts, project)
 		}
 	}
-	if session := strings.TrimSpace(ev.SessionName); session != "" {
-		return strings.Join(append(parts, session), "-")
+	session := strings.TrimSpace(ev.SessionName)
+	if session != "" {
+		parts = append(parts, session)
 	}
-	if len(parts) == 0 {
+	name := strings.Join(parts, "-")
+	if label := ev.KindLabel(); label != "" {
+		if name == "" {
+			return label
+		}
+		return label + " · " + name
+	}
+	switch {
+	case session != "":
+		return name
+	case name != "":
+		return name + " 任务完成"
+	default:
 		return "任务完成"
 	}
-	return strings.Join(parts, "-") + " 任务完成"
 }
 
 // details 返回正文末尾的详情行。等待介入事件发生在回合中间，不显示完成时间与耗时。

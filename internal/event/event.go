@@ -17,12 +17,12 @@ const (
 	SourceOpenCode = "opencode"
 )
 
-// 事件类别。空值与 KindCompletion 均表示任务完成；其余三类是 Claude Code
-// 的「等待用户介入」事件——回合还没结束，但需要人回来做决策。
+// 事件类别。空值与 KindCompletion 均表示任务完成；其余类别是回合中需要人
+// 回来处理的事件：等待选择、权限审批、长时间空闲，或因 API 错误异常终止。
 const (
 	KindCompletion = ""
 	KindChoice     = "choice"     // Claude 通过 AskUserQuestion 等待选择
-	KindPermission = "permission" // Claude 等待工具权限审批
+	KindPermission = "permission" // Claude 或 Codex 等待工具权限审批
 	KindIdle       = "idle"       // 回合结束后长时间无输入
 	KindFailure    = "failure"    // Claude 因 API 错误终止回合
 )
@@ -45,8 +45,8 @@ type Event struct {
 	Kind string `json:"kind,omitempty"`
 }
 
-// AwaitingLabel 返回等待介入事件在通知标题中的类别词；任务完成返回空串。
-func (e Event) AwaitingLabel() string {
+// KindLabel 返回非完成事件在通知标题中的类别词；任务完成返回空串。
+func (e Event) KindLabel() string {
 	switch e.Kind {
 	case KindChoice:
 		return "等待选择"
@@ -54,6 +54,8 @@ func (e Event) AwaitingLabel() string {
 		return "权限确认"
 	case KindIdle:
 		return "空闲等待"
+	case KindFailure:
+		return "任务异常终止"
 	default:
 		return ""
 	}

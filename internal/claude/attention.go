@@ -29,10 +29,11 @@ func FromQuestionPayload(p hook.PreToolUsePayload) event.Event {
 		Cwd:       p.Cwd,
 		SessionID: p.SessionID,
 		Kind:      event.KindChoice,
+		// 会话标题写在 transcript 里；取不到时通知标题只显示类别词。
+		SessionName: transcriptTitle(p.TranscriptPath),
 	}
 	var input questionInput
 	if err := json.Unmarshal(p.ToolInput, &input); err != nil || len(input.Questions) == 0 {
-		ev.SessionName = "等待选择"
 		ev.Message = "Claude 正在等待你的选择。"
 		return ev
 	}
@@ -58,11 +59,9 @@ func FromQuestionPayload(p hook.PreToolUsePayload) event.Event {
 		parts = append(parts, text)
 	}
 	if len(parts) == 0 {
-		ev.SessionName = "等待选择"
 		ev.Message = "Claude 正在等待你的选择。"
 		return ev
 	}
-	ev.SessionName = "等待选择"
 	ev.Message = strings.Join(parts, "\n\n")
 	return ev
 }
@@ -78,14 +77,12 @@ func FromNotificationPayload(p hook.NotificationPayload) (event.Event, bool) {
 	switch p.NotificationType {
 	case "permission_prompt":
 		ev.Kind = event.KindPermission
-		ev.SessionName = "权限确认"
 		ev.Message = strings.TrimSpace(p.Message)
 		if ev.Message == "" {
 			ev.Message = "Claude 正在等待权限审批。"
 		}
 	case "idle_prompt":
 		ev.Kind = event.KindIdle
-		ev.SessionName = "空闲等待"
 		ev.Message = strings.TrimSpace(p.Message)
 		if ev.Message == "" {
 			ev.Message = "Claude 已完成回合，等待你的输入。"
@@ -95,6 +92,8 @@ func FromNotificationPayload(p hook.NotificationPayload) (event.Event, bool) {
 		// 一律不推。
 		return event.Event{}, false
 	}
+	// 确定要推送后才读 transcript 取会话标题。
+	ev.SessionName = transcriptTitle(p.TranscriptPath)
 	return ev, true
 }
 
@@ -105,7 +104,7 @@ func FromStopFailurePayload(p hook.StopFailurePayload) event.Event {
 		Source:      event.SourceClaude,
 		Cwd:         p.Cwd,
 		SessionID:   p.SessionID,
-		SessionName: "任务异常终止",
+		SessionName: transcriptTitle(p.TranscriptPath),
 		Kind:        event.KindFailure,
 	}
 	for _, message := range []string{p.ErrorDetails, p.LastAssistantMessage, p.Error} {

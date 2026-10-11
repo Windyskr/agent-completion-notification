@@ -55,12 +55,12 @@ func FromPayload(p hook.StopPayload, now time.Time) event.Event {
 // 命令摘要，方便用户在手机上判断需要回到电脑处理什么操作。
 func FromPermissionRequestPayload(p hook.PermissionRequestPayload) event.Event {
 	ev := event.Event{
-		Source:      event.SourceCodex,
-		Cwd:         p.Cwd,
-		SessionID:   firstNonEmpty(p.SessionID, p.TurnID),
-		SessionName: "权限确认",
-		Kind:        event.KindPermission,
+		Source:    event.SourceCodex,
+		Cwd:       p.Cwd,
+		SessionID: firstNonEmpty(p.SessionID, p.TurnID),
+		Kind:      event.KindPermission,
 	}
+	ev.SessionName = sessionName(ev.SessionID)
 
 	var input struct {
 		Description string `json:"description"`

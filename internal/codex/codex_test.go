@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/windyskr/agent-completion-notification/internal/event"
 	"github.com/windyskr/agent-completion-notification/internal/hook"
 )
 
@@ -65,6 +66,30 @@ func TestFromPayloadUsesLastAssistantMessage(t *testing.T) {
 	}
 	if ev.SessionName != "完善组件消融实验方案" {
 		t.Errorf("会话名 = %q, 期望最后一条匹配的索引名称", ev.SessionName)
+	}
+}
+
+// 权限确认带上会话名，类别词由渲染层加在标题前；正文优先展示审批原因。
+func TestFromPermissionRequestPayload(t *testing.T) {
+	writeSessionIndex(t, `{"id":"sess-1","thread_name":"清理构建产物"}`)
+	cases := []struct {
+		input string
+		want  string
+	}{
+		{`{"description":"删除 build 目录","command":"rm -rf build"}`, "删除 build 目录"},
+		{`{"command":"rm -rf build"}`, "请求执行命令：\nrm -rf build"},
+		{`{}`, "Codex 正在等待工具权限审批：shell"},
+	}
+	for _, c := range cases {
+		ev := FromPermissionRequestPayload(hook.PermissionRequestPayload{
+			SessionID: "sess-1", Cwd: "/work/proj", ToolName: "shell", ToolInput: []byte(c.input),
+		})
+		if ev.Kind != event.KindPermission || ev.SessionName != "清理构建产物" {
+			t.Errorf("%s: 事件 = %+v", c.input, ev)
+		}
+		if ev.Message != c.want {
+			t.Errorf("%s: 正文 = %q, 期望 %q", c.input, ev.Message, c.want)
+		}
 	}
 }
 

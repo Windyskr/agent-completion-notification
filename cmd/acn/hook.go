@@ -95,7 +95,7 @@ func runHook(source string, stdin io.Reader, stderr io.Writer) {
 		defer release()
 	}
 
-	details := enrichPaseoEvent(source, &ev)
+	details := enrichPaseoEvent(&ev)
 	entry.PaseoAgentName = details.AgentName
 	entry.PaseoAgentLookupError = details.AgentLookupError
 	entry.PaseoWorkspaceTitle = details.WorkspaceTitle
@@ -191,10 +191,11 @@ type paseoEventDetails struct {
 	TitleGeneration      bool
 }
 
-// enrichPaseoEvent 回填 Paseo 的 Workspace 标题。Agent 名称通常来自初始 prompt，
+// enrichPaseoEvent 为取不到会话标题的 Claude Code / Codex 事件回填 Paseo 的
+// Workspace 标题，完成与等待介入事件一视同仁。Agent 名称通常来自初始 prompt，
 // 仅在 Workspace 标题不可用时作为回退。
-func enrichPaseoEvent(hookSource string, ev *event.Event) paseoEventDetails {
-	if (hookSource != "codex" && hookSource != "claude") || strings.TrimSpace(ev.SessionName) != "" {
+func enrichPaseoEvent(ev *event.Event) paseoEventDetails {
+	if (ev.Source != event.SourceCodex && ev.Source != event.SourceClaude) || strings.TrimSpace(ev.SessionName) != "" {
 		return paseoEventDetails{}
 	}
 	agentID := strings.TrimSpace(os.Getenv("PASEO_AGENT_ID"))
@@ -218,7 +219,7 @@ func enrichPaseoEvent(hookSource string, ev *event.Event) paseoEventDetails {
 		ev.SessionName = agentName
 		return details
 	}
-	if hookSource == "codex" && paseo.IsTitleGenerationMessage(ev.Message) {
+	if ev.Source == event.SourceCodex && ev.Kind == event.KindCompletion && paseo.IsTitleGenerationMessage(ev.Message) {
 		details.TitleGeneration = true
 	}
 	return details

@@ -35,6 +35,11 @@ func TestTitle(t *testing.T) {
 		// 取不到会话名时保持旧标题降级行为。
 		{"无会话名有前缀", config.Config{ShowAgentName: true}, event.Event{Source: event.SourceCodex}, "Codex 任务完成"},
 		{"无会话名无前缀", config.Config{}, event.Event{Source: event.SourceCodex}, "任务完成"},
+		// 等待介入与异常终止以类别词开头，后面跟会话名，多个会话并行时也能分辨。
+		{"权限确认带会话名", config.Config{}, event.Event{Kind: event.KindPermission, SessionName: "修复登录问题"}, "权限确认 · 修复登录问题"},
+		{"等待选择带前缀", config.Config{ShowProjectName: true}, event.Event{Kind: event.KindChoice, Cwd: "/work/acn", SessionName: "发布"}, "等待选择 · acn-发布"},
+		{"空闲无会话名", config.Config{ShowProjectName: true}, event.Event{Kind: event.KindIdle, Cwd: "/work/acn"}, "空闲等待 · acn"},
+		{"异常终止无任何名称", config.Config{}, event.Event{Kind: event.KindFailure}, "任务异常终止"},
 	}
 	for _, c := range cases {
 		if got := render(c.cfg, c.ev, renderNow).Title; got != c.want {

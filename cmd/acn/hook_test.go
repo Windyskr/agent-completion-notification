@@ -329,3 +329,18 @@ func TestRunHookWarnsOnInvalidTimezone(t *testing.T) {
 		t.Errorf("事件日志应记录警告: %+v", entry)
 	}
 }
+
+// 等待介入事件同样回填 Paseo Workspace 标题，并以类别词开头。
+func TestRunHookTitlesPermissionWithPaseoWorkspace(t *testing.T) {
+	dir := hookEnv(t)
+	var slack slackCapture
+	saveHookConfig(t, slack.serve(t).URL)
+	writePaseoWorkspace(t, dir, "agent-1", "重构推送逻辑")
+
+	runHookForTest(t, "codex-permission", `{"session_id":"s1","cwd":"/work/acn","tool_name":"shell","tool_input":{"command":"rm -rf build"}}`)
+
+	texts := slack.received()
+	if len(texts) != 1 || !strings.HasPrefix(texts[0], "权限确认 · 重构推送逻辑\n") {
+		t.Errorf("推送内容 = %q, 期望以「权限确认 · 重构推送逻辑」开头", texts)
+	}
+}
