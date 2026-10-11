@@ -13,22 +13,21 @@ import (
 	"time"
 
 	"github.com/windyskr/agent-completion-notification/internal/config"
-	"github.com/windyskr/agent-completion-notification/internal/event"
+	"github.com/windyskr/agent-completion-notification/internal/message"
 )
 
 type Notifier struct {
 	cfg    config.Teams
 	client *http.Client
-	now    func() time.Time
 }
 
 func New(cfg config.Teams) *Notifier {
-	return &Notifier{cfg: cfg, client: &http.Client{Timeout: 10 * time.Second}, now: time.Now}
+	return &Notifier{cfg: cfg, client: &http.Client{Timeout: 10 * time.Second}}
 }
 
 func (n *Notifier) Name() string { return "teams" }
 
-func (n *Notifier) Send(ctx context.Context, ev event.Event) error {
+func (n *Notifier) Send(ctx context.Context, msg message.Message) error {
 	endpoint := strings.TrimSpace(n.cfg.WebhookURL)
 	parsed, err := url.Parse(endpoint)
 	if endpoint == "" {
@@ -48,10 +47,10 @@ func (n *Notifier) Send(ctx context.Context, ev event.Event) error {
 	}{
 		Type:       "MessageCard",
 		Context:    "http://schema.org/extensions",
-		Summary:    ev.Title(),
+		Summary:    msg.Title,
 		ThemeColor: "0076D7",
-		Title:      ev.Title(),
-		Sections:   []section{{Text: ev.Body(n.now()), Markdown: true}},
+		Title:      msg.Title,
+		Sections:   []section{{Text: msg.Body(message.Format{}), Markdown: true}},
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {

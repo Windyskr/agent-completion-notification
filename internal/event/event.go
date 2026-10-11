@@ -1,15 +1,14 @@
-// Package event 定义各 AI CLI 来源归一化之后的「任务完成」事件。
+// Package event 定义各 AI CLI 来源归一化之后的事件。
 //
-// 来源适配层（Claude Code 的 Stop hook、Codex 的 notify 回调）只负责把各自的
-// 原始载荷翻译成 Event；daemon 与通知渠道只认识 Event。新增来源不必改动渠道，
-// 新增渠道也不必改动来源。
+// 来源适配层（Claude Code / Codex 的 hook、OpenCode 插件）只负责把各自的原始
+// 载荷翻译成 Event；notify 再按配置把 Event 渲染成通知交给渠道。新增来源不必
+// 改动渠道，新增渠道也不必改动来源。
 package event
 
 import (
 	"fmt"
 	"path/filepath"
 	"strings"
-	"time"
 )
 
 const (
@@ -31,28 +30,19 @@ const (
 // DefaultMaxMessageLength 是推送正文中回复原文的默认最大字符数。
 const DefaultMaxMessageLength = 1000
 
-const messagePreviewRunes = DefaultMaxMessageLength
-
-// Event 是一次 AI CLI 任务完成。
+// Event 是一次 AI CLI 事件：任务完成，或回合中需要用户介入。它只描述发生了
+// 什么，标题与正文如何展示由 notify 按配置渲染。
 type Event struct {
-	Source     string `json:"source"`
-	AgentName  string `json:"agent_name,omitempty"`
-	DeviceName string `json:"device_name,omitempty"`
-	// Show/Hide 字段由投递层根据配置填写，让三个可选前缀可独立控制。
-	ShowDeviceName  bool   `json:"show_device_name,omitempty"`
-	HideAgentName   bool   `json:"hide_agent_name,omitempty"`
-	HideProjectName bool   `json:"hide_project_name,omitempty"`
-	Cwd             string `json:"cwd"`
-	Message         string `json:"message"`
-	SessionID       string `json:"session_id"`
-	SessionName     string `json:"session_name,omitempty"`
-	// DurationMS 为 0 表示来源未提供耗时（Codex 的 notify 回调只有结束时刻，
-	// 没有本轮起点）。此时耗时阈值不参与判断。
+	Source      string `json:"source"`
+	Cwd         string `json:"cwd"`
+	Message     string `json:"message"`
+	SessionID   string `json:"session_id"`
+	SessionName string `json:"session_name,omitempty"`
+	// DurationMS 为 0 表示来源未提供耗时（如 transcript 里读不到本轮起点）。
+	// 此时耗时阈值不参与判断。
 	DurationMS int64 `json:"duration_ms"`
 	// Kind 区分事件类别；空值表示任务完成。
-	Kind             string `json:"kind,omitempty"`
-	maxMessageLength *int
-	location         *time.Location
+	Kind string `json:"kind,omitempty"`
 }
 
 // AwaitingLabel 返回等待介入事件在通知标题中的类别词；任务完成返回空串。
@@ -69,33 +59,6 @@ func (e Event) AwaitingLabel() string {
 	}
 }
 
-// SetMaxMessageLength 设置回复原文的最大字符数；0 表示不截断。
-func (e *Event) SetMaxMessageLength(max int) {
-	e.maxMessageLength = &max
-}
-
-// SetLocation 设置通知正文中时间使用的时区。
-func (e *Event) SetLocation(location *time.Location) {
-	e.location = location
-}
-
-// DisplayAgentName 返回适合放进连字符标题前缀的 Agent 名。
-func (e Event) DisplayAgentName() string {
-	if name := strings.TrimSpace(e.AgentName); name != "" {
-		return name
-	}
-	switch e.Source {
-	case SourceClaude:
-		return "claude"
-	case SourceCodex:
-		return "Codex"
-	case SourceOpenCode:
-		return "OpenCode"
-	default:
-		return strings.TrimSpace(e.Source)
-	}
-}
-
 // Project 取工作目录名作为项目名。
 func (e Event) Project() string {
 	cwd := strings.TrimSpace(e.Cwd)
@@ -103,70 +66,6 @@ func (e Event) Project() string {
 		return ""
 	}
 	return filepath.Base(cwd)
-}
-
-// Title 默认使用会话名；设备、Agent 与项目名可按配置作为前缀。
-// 取不到会话名时使用已启用的前缀，全部为空则退回通用标题。
-func (e Event) Title() string {
-	parts := make([]string, 0, 4)
-	if e.ShowDeviceName {
-		if device := strings.TrimSpace(e.DeviceName); device != "" {
-			parts = append(parts, device)
-		}
-	}
-	if !e.HideAgentName {
-		if agent := e.DisplayAgentName(); agent != "" {
-			parts = append(parts, agent)
-		}
-	}
-	if !e.HideProjectName {
-		if project := e.Project(); project != "" {
-			parts = append(parts, project)
-		}
-	}
-	if session := strings.TrimSpace(e.SessionName); session != "" {
-		parts = append(parts, session)
-		return strings.Join(parts, "-")
-	}
-	if len(parts) == 0 {
-		return "任务完成"
-	}
-	return strings.Join(parts, "-") + " 任务完成"
-}
-
-// Body 组装推送正文。渠道只负责传输，不再各自拼文案。
-func (e Event) Body(now time.Time) string {
-	var details []string
-	// 等待介入事件发生在回合中间，不显示完成时间与耗时。
-	if e.Kind == KindCompletion {
-		if e.location != nil {
-			now = now.In(e.location)
-		}
-		details = append(details, "完成时间："+now.Format("2006-01-02 15:04:05"))
-		if d := FormatDuration(e.DurationMS); d != "" {
-			details = append(details, "耗时："+d)
-		}
-	} else if e.Kind == KindFailure {
-		if e.location != nil {
-			now = now.In(e.location)
-		}
-		details = append(details, "发生时间："+now.Format("2006-01-02 15:04:05"))
-	}
-	if cwd := strings.TrimSpace(e.Cwd); cwd != "" {
-		details = append(details, "目录："+cwd)
-	}
-	maxMessageLength := DefaultMaxMessageLength
-	if e.maxMessageLength != nil {
-		maxMessageLength = *e.maxMessageLength
-	}
-	msg := strings.TrimSpace(e.Message)
-	if maxMessageLength > 0 {
-		msg = truncate(msg, maxMessageLength)
-	}
-	if msg != "" {
-		return msg + "\n\n" + strings.Join(details, "\n")
-	}
-	return strings.Join(details, "\n")
 }
 
 // FormatDuration 把毫秒格式化为人读的耗时；未知耗时返回空串。
@@ -183,13 +82,4 @@ func FormatDuration(ms int64) string {
 	default:
 		return fmt.Sprintf("%dh%dm", sec/3600, (sec%3600)/60)
 	}
-}
-
-// truncate 按字符（而非字节）截断，避免切断中文。
-func truncate(s string, max int) string {
-	r := []rune(s)
-	if len(r) <= max {
-		return s
-	}
-	return strings.TrimRight(string(r[:max]), " ") + "…"
 }

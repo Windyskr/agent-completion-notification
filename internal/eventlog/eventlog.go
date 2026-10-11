@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/windyskr/agent-completion-notification/internal/event"
+	"github.com/windyskr/agent-completion-notification/internal/message"
 	"github.com/windyskr/agent-completion-notification/internal/notify"
 )
 
@@ -28,6 +29,7 @@ type Entry struct {
 	PaseoTitleGeneration      bool                    `json:"paseo_title_generation,omitempty"`
 	Event                     *event.Event            `json:"event,omitempty"`
 	MessagePreview            string                  `json:"message_preview,omitempty"`
+	Notification              *message.Message        `json:"notification,omitempty"`
 	Skip                      bool                    `json:"skip"`
 	SkippedReason             string                  `json:"skipped_reason,omitempty"`
 	ParseError                string                  `json:"parse_error,omitempty"`

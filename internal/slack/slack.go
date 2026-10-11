@@ -13,22 +13,21 @@ import (
 	"time"
 
 	"github.com/windyskr/agent-completion-notification/internal/config"
-	"github.com/windyskr/agent-completion-notification/internal/event"
+	"github.com/windyskr/agent-completion-notification/internal/message"
 )
 
 type Notifier struct {
 	cfg    config.Slack
 	client *http.Client
-	now    func() time.Time
 }
 
 func New(cfg config.Slack) *Notifier {
-	return &Notifier{cfg: cfg, client: &http.Client{Timeout: 10 * time.Second}, now: time.Now}
+	return &Notifier{cfg: cfg, client: &http.Client{Timeout: 10 * time.Second}}
 }
 
 func (n *Notifier) Name() string { return "slack" }
 
-func (n *Notifier) Send(ctx context.Context, ev event.Event) error {
+func (n *Notifier) Send(ctx context.Context, msg message.Message) error {
 	endpoint := strings.TrimSpace(n.cfg.WebhookURL)
 	parsed, err := url.Parse(endpoint)
 	if endpoint == "" {
@@ -40,7 +39,7 @@ func (n *Notifier) Send(ctx context.Context, ev event.Event) error {
 
 	payload := struct {
 		Text string `json:"text"`
-	}{Text: ev.Title() + "\n\n" + ev.Body(n.now())}
+	}{Text: msg.Body(message.Format{Header: msg.Title + "\n\n"})}
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return err

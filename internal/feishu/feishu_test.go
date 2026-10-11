@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/windyskr/agent-completion-notification/internal/config"
-	"github.com/windyskr/agent-completion-notification/internal/event"
+	"github.com/windyskr/agent-completion-notification/internal/message"
 )
 
 // serveCapture 起一个假飞书，记录收到的请求体并返回指定应答。
@@ -34,16 +34,16 @@ func TestSendPostsRichText(t *testing.T) {
 	srv := serveCapture(t, `{"code":0,"msg":"success"}`, &got)
 
 	n := New(config.Feishu{WebhookURL: srv.URL})
-	ev := event.Event{DeviceName: "devbox", ShowDeviceName: true, Source: event.SourceClaude, Cwd: "/work/acn", Message: "改好了", DurationMS: 90_000}
+	msg := message.Message{Title: "devbox-claude-acn 任务完成", Reply: "改好了", Details: []string{"耗时：1m30s"}}
 
-	if err := n.Send(context.Background(), ev); err != nil {
+	if err := n.Send(context.Background(), msg); err != nil {
 		t.Fatal(err)
 	}
 
 	if got["msg_type"] != "post" {
 		t.Errorf("msg_type = %v, 期望 post", got["msg_type"])
 	}
-	// 标题与正文应由 Event 统一组装。
+	// 标题与正文应原样使用 notify 渲染的结果。
 	raw, _ := json.Marshal(got)
 	text := string(raw)
 	for _, want := range []string{"devbox-claude-acn 任务完成", "1m30s", "改好了"} {
@@ -65,7 +65,7 @@ func TestSendIncludesSignatureWhenSecretSet(t *testing.T) {
 	n := New(config.Feishu{WebhookURL: srv.URL, Secret: "my-secret"})
 	n.now = func() time.Time { return time.Unix(1700000000, 0) }
 
-	if err := n.Send(context.Background(), event.Event{Source: event.SourceClaude}); err != nil {
+	if err := n.Send(context.Background(), message.Message{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -82,7 +82,7 @@ func TestSendIncludesSignatureWhenSecretSet(t *testing.T) {
 func TestSendDetectsBusinessError(t *testing.T) {
 	srv := serveCapture(t, `{"code":19021,"msg":"sign match fail"}`, nil)
 
-	err := New(config.Feishu{WebhookURL: srv.URL}).Send(context.Background(), event.Event{})
+	err := New(config.Feishu{WebhookURL: srv.URL}).Send(context.Background(), message.Message{})
 	if err == nil {
 		t.Fatal("HTTP 200 但 code 非 0，应当判定为失败")
 	}
@@ -95,7 +95,7 @@ func TestSendDetectsBusinessError(t *testing.T) {
 func TestSendDetectsStatusCodeError(t *testing.T) {
 	srv := serveCapture(t, `{"StatusCode":9499,"StatusMessage":"bad request"}`, nil)
 
-	err := New(config.Feishu{WebhookURL: srv.URL}).Send(context.Background(), event.Event{})
+	err := New(config.Feishu{WebhookURL: srv.URL}).Send(context.Background(), message.Message{})
 	if err == nil || !strings.Contains(err.Error(), "9499") {
 		t.Errorf("应识别出 StatusCode 形式的失败，得到 %v", err)
 	}
@@ -108,14 +108,14 @@ func TestSendReportsHTTPError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	err := New(config.Feishu{WebhookURL: srv.URL}).Send(context.Background(), event.Event{})
+	err := New(config.Feishu{WebhookURL: srv.URL}).Send(context.Background(), message.Message{})
 	if err == nil || !strings.Contains(err.Error(), "404") {
 		t.Errorf("应报告 HTTP 404，得到 %v", err)
 	}
 }
 
 func TestSendRequiresWebhook(t *testing.T) {
-	if err := New(config.Feishu{}).Send(context.Background(), event.Event{}); err == nil {
+	if err := New(config.Feishu{}).Send(context.Background(), message.Message{}); err == nil {
 		t.Error("未配置地址时应当报错")
 	}
 }
@@ -127,7 +127,7 @@ func TestSendErrorHidesWebhookToken(t *testing.T) {
 	srv.Close()
 
 	for _, url := range []string{webhook, "http://[::1/hook/SECRET-TOKEN"} {
-		err := New(config.Feishu{WebhookURL: url}).Send(context.Background(), event.Event{})
+		err := New(config.Feishu{WebhookURL: url}).Send(context.Background(), message.Message{})
 		if err == nil {
 			t.Fatalf("%s: 应当报错", url)
 		}

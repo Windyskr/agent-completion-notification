@@ -9,10 +9,10 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/windyskr/agent-completion-notification/internal/config"
 	"github.com/windyskr/agent-completion-notification/internal/event"
+	"github.com/windyskr/agent-completion-notification/internal/message"
 )
 
 func TestSendPostsJSON(t *testing.T) {
@@ -27,10 +27,12 @@ func TestSendPostsJSON(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	n := New(config.Bark{URL: srv.URL + "/device-key"})
-	n.now = func() time.Time { return time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC) }
-	ev := event.Event{AgentName: "claude", Source: event.SourceClaude, Cwd: "/work/acn", Message: "改好了"}
-	if err := n.Send(context.Background(), ev); err != nil {
+	n := New(config.Bark{URL: srv.URL + "/device-key", UpdateBySession: true})
+	msg := message.Message{
+		Source: event.SourceClaude, SessionID: "s1", Title: "claude-acn 任务完成", Reply: "改好了",
+		Details: []string{"完成时间：2026-07-27 12:00:00", "目录：/work/acn"},
+	}
+	if err := n.Send(context.Background(), msg); err != nil {
 		t.Fatal(err)
 	}
 
@@ -46,10 +48,12 @@ func TestSendPostsJSON(t *testing.T) {
 	if got["icon"] != claudeIconURL {
 		t.Errorf("icon = %q, 期望 Claude 官方图标", got["icon"])
 	}
-	for _, want := range []string{"2026-07-27 12:00:00", "/work/acn", "改好了"} {
-		if !strings.Contains(got["markdown"], want) {
-			t.Errorf("markdown 缺少 %q: %s", want, got["markdown"])
-		}
+	// 正文段落内的单换行要改写成 Markdown 强制换行，否则详情会挤成一行。
+	if want := "改好了\n\n完成时间：2026-07-27 12:00:00  \n目录：/work/acn"; got["markdown"] != want {
+		t.Errorf("markdown = %q, 期望 %q", got["markdown"], want)
+	}
+	if got["id"] != "s1" {
+		t.Errorf("id = %q, 同会话更新应使用会话 ID", got["id"])
 	}
 }
 
@@ -72,7 +76,7 @@ func TestSendDetectsBusinessError(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	err := New(config.Bark{URL: srv.URL}).Send(context.Background(), event.Event{})
+	err := New(config.Bark{URL: srv.URL}).Send(context.Background(), message.Message{})
 	if err == nil || !strings.Contains(err.Error(), "code=400") {
 		t.Errorf("应识别 Bark 业务失败，得到 %v", err)
 	}
@@ -84,7 +88,7 @@ func TestSendReportsHTTPError(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	err := New(config.Bark{URL: srv.URL}).Send(context.Background(), event.Event{})
+	err := New(config.Bark{URL: srv.URL}).Send(context.Background(), message.Message{})
 	if err == nil || !strings.Contains(err.Error(), "503") {
 		t.Errorf("应报告 HTTP 503，得到 %v", err)
 	}
@@ -96,13 +100,13 @@ func TestSendRejectsMalformedResponse(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	if err := New(config.Bark{URL: srv.URL}).Send(context.Background(), event.Event{}); err == nil {
+	if err := New(config.Bark{URL: srv.URL}).Send(context.Background(), message.Message{}); err == nil {
 		t.Error("非法 Bark 应答应当报错")
 	}
 }
 
 func TestSendRequiresURL(t *testing.T) {
-	if err := New(config.Bark{}).Send(context.Background(), event.Event{}); err == nil {
+	if err := New(config.Bark{}).Send(context.Background(), message.Message{}); err == nil {
 		t.Error("未配置 Bark URL 时应当报错")
 	}
 }
@@ -117,7 +121,7 @@ func TestSendDoesNotLeakDeviceKeyInNetworkError(t *testing.T) {
 		return nil, errors.New("network unavailable")
 	})
 
-	err := n.Send(context.Background(), event.Event{})
+	err := n.Send(context.Background(), message.Message{})
 	if err == nil {
 		t.Fatal("网络错误应当上报")
 	}

@@ -186,6 +186,9 @@ func TestRunHookDeliversClaudeStop(t *testing.T) {
 	if entry.HookSource != "claude" || entry.Skip || len(entry.Delivery) != 1 || !entry.Delivery[0].Sent {
 		t.Errorf("事件日志 = %+v", entry)
 	}
+	if entry.Notification == nil || entry.Notification.Title != "修复登录问题" {
+		t.Errorf("事件日志应记录实际投递的通知: %+v", entry.Notification)
+	}
 }
 
 func TestRunHookRecordsParseError(t *testing.T) {

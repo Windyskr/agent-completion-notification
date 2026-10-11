@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/windyskr/agent-completion-notification/internal/config"
-	"github.com/windyskr/agent-completion-notification/internal/event"
+	"github.com/windyskr/agent-completion-notification/internal/message"
 )
 
 // Notifier 实现 notify.Notifier。
@@ -38,8 +38,8 @@ func New(cfg config.Feishu) *Notifier {
 
 func (n *Notifier) Name() string { return "feishu" }
 
-// Send 以富文本（post）消息推送，标题与正文由 Event 统一组装。
-func (n *Notifier) Send(ctx context.Context, ev event.Event) error {
+// Send 以富文本（post）消息推送，标题与正文已由 notify 统一渲染。
+func (n *Notifier) Send(ctx context.Context, msg message.Message) error {
 	endpoint := strings.TrimSpace(n.cfg.WebhookURL)
 	if endpoint == "" {
 		return fmt.Errorf("未配置飞书 webhook 地址")
@@ -56,8 +56,8 @@ func (n *Notifier) Send(ctx context.Context, ev event.Event) error {
 		"content": map[string]any{
 			"post": map[string]any{
 				"zh_cn": map[string]any{
-					"title":   ev.Title(),
-					"content": [][]map[string]string{{{"tag": "text", "text": ev.Body(now)}}},
+					"title":   msg.Title,
+					"content": [][]map[string]string{{{"tag": "text", "text": msg.Body(message.Format{})}}},
 				},
 			},
 		},

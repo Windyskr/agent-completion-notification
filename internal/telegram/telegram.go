@@ -13,21 +13,20 @@ import (
 	"time"
 
 	"github.com/windyskr/agent-completion-notification/internal/config"
-	"github.com/windyskr/agent-completion-notification/internal/event"
+	"github.com/windyskr/agent-completion-notification/internal/message"
 )
 
 type Notifier struct {
 	cfg    config.Telegram
 	client *http.Client
-	now    func() time.Time
 }
 
 func New(cfg config.Telegram) *Notifier {
-	return &Notifier{cfg: cfg, client: &http.Client{Timeout: 10 * time.Second}, now: time.Now}
+	return &Notifier{cfg: cfg, client: &http.Client{Timeout: 10 * time.Second}}
 }
 func (n *Notifier) Name() string { return "telegram" }
 
-func (n *Notifier) Send(ctx context.Context, ev event.Event) error {
+func (n *Notifier) Send(ctx context.Context, msg message.Message) error {
 	token, chatID := strings.TrimSpace(n.cfg.BotToken), strings.TrimSpace(n.cfg.ChatID)
 	if token == "" || chatID == "" {
 		return fmt.Errorf("Telegram bot token 或 chat_id 未配置")
@@ -35,7 +34,7 @@ func (n *Notifier) Send(ctx context.Context, ev event.Event) error {
 	endpoint := "https://api.telegram.org/bot" + url.PathEscape(token) + "/sendMessage"
 	payload := map[string]any{
 		"chat_id":                  chatID,
-		"text":                     ev.Title() + "\n\n" + ev.Body(n.now()),
+		"text":                     msg.Body(message.Format{Header: msg.Title + "\n\n"}),
 		"disable_web_page_preview": true,
 	}
 	body, err := json.Marshal(payload)

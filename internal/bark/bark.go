@@ -14,6 +14,7 @@ import (
 
 	"github.com/windyskr/agent-completion-notification/internal/config"
 	"github.com/windyskr/agent-completion-notification/internal/event"
+	"github.com/windyskr/agent-completion-notification/internal/message"
 )
 
 const (
@@ -25,21 +26,19 @@ const (
 type Notifier struct {
 	cfg    config.Bark
 	client *http.Client
-	now    func() time.Time
 }
 
 func New(cfg config.Bark) *Notifier {
 	return &Notifier{
 		cfg:    cfg,
 		client: &http.Client{Timeout: 10 * time.Second},
-		now:    time.Now,
 	}
 }
 
 func (n *Notifier) Name() string { return "bark" }
 
 // Send 使用 Bark 官方支持的 JSON POST，避免把中文正文拼进 URL。
-func (n *Notifier) Send(ctx context.Context, ev event.Event) error {
+func (n *Notifier) Send(ctx context.Context, msg message.Message) error {
 	endpoint := strings.TrimSpace(n.cfg.URL)
 	if endpoint == "" {
 		return fmt.Errorf("未配置 Bark 设备端点")
@@ -56,15 +55,15 @@ func (n *Notifier) Send(ctx context.Context, ev event.Event) error {
 		URL      string `json:"url,omitempty"`
 		ID       string `json:"id,omitempty"`
 	}{
-		Title:    ev.Title(),
-		Markdown: withHardLineBreaks(ev.Body(n.now())),
+		Title:    msg.Title,
+		Markdown: msg.Body(message.Format{HardLineBreaks: true}),
 		Group:    defaultGroup,
-		Icon:     iconForSource(ev.Source),
-		URL:      n.cfg.SourceURL(ev.Source),
+		Icon:     iconForSource(msg.Source),
+		URL:      n.cfg.SourceURL(msg.Source),
 	}
 	// Bark 要求 id 在 JSON 中为字符串；相同会话的后续推送会更新原通知。
 	if n.cfg.UpdateBySession {
-		payload.ID = strings.TrimSpace(ev.SessionID)
+		payload.ID = msg.SessionID
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -96,19 +95,6 @@ func (n *Notifier) Send(ctx context.Context, ev event.Event) error {
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
 	}
 	return checkResponse(raw)
-}
-
-// withHardLineBreaks 保留正文段落，并让段落内的单换行符合 Markdown 强制换行语法。
-func withHardLineBreaks(markdown string) string {
-	lines := strings.Split(markdown, "\n")
-	for i := 0; i < len(lines)-1; i++ {
-		if strings.TrimSpace(lines[i]) != "" &&
-			strings.TrimSpace(lines[i+1]) != "" &&
-			!strings.HasSuffix(lines[i], "  ") {
-			lines[i] += "  "
-		}
-	}
-	return strings.Join(lines, "\n")
 }
 
 func iconForSource(source string) string {

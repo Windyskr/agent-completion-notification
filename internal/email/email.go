@@ -12,24 +12,22 @@ import (
 	"net/mail"
 	"net/smtp"
 	"strings"
-	"time"
 
 	"github.com/windyskr/agent-completion-notification/internal/config"
-	"github.com/windyskr/agent-completion-notification/internal/event"
+	"github.com/windyskr/agent-completion-notification/internal/message"
 )
 
 type Notifier struct {
 	cfg config.Email
-	now func() time.Time
 }
 
 func New(cfg config.Email) *Notifier {
-	return &Notifier{cfg: cfg, now: time.Now}
+	return &Notifier{cfg: cfg}
 }
 
 func (n *Notifier) Name() string { return "email" }
 
-func (n *Notifier) Send(ctx context.Context, ev event.Event) error {
+func (n *Notifier) Send(ctx context.Context, msg message.Message) error {
 	host, port, err := net.SplitHostPort(strings.TrimSpace(n.cfg.SMTPAddress))
 	if err != nil || host == "" {
 		return fmt.Errorf("SMTP 地址格式无效，应为 host:port")
@@ -90,8 +88,8 @@ func (n *Notifier) Send(ctx context.Context, ev event.Event) error {
 	if err != nil {
 		return fmt.Errorf("创建邮件正文失败: %w", err)
 	}
-	message := buildMessage(from, recipients, ev.Title(), ev.Body(n.now()))
-	if _, err := io.Copy(w, strings.NewReader(message)); err != nil {
+	content := buildMessage(from, recipients, msg.Title, msg.Body(message.Format{}))
+	if _, err := io.Copy(w, strings.NewReader(content)); err != nil {
 		_ = w.Close()
 		return fmt.Errorf("发送邮件正文失败: %w", err)
 	}

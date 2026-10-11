@@ -1,10 +1,6 @@
 package event
 
-import (
-	"strings"
-	"testing"
-	"time"
-)
+import "testing"
 
 func TestProject(t *testing.T) {
 	cases := map[string]string{
@@ -16,54 +12,6 @@ func TestProject(t *testing.T) {
 		if got := (Event{Cwd: cwd}).Project(); got != want {
 			t.Errorf("Project(%q) = %q, 期望 %q", cwd, got, want)
 		}
-	}
-}
-
-func TestTitle(t *testing.T) {
-	// 产品默认关闭所有可选前缀，只显示会话名。
-	ev := Event{
-		DeviceName: "MacBookPro", Source: SourceClaude, Cwd: "/work/acn",
-		SessionName: "修复登录问题", HideAgentName: true, HideProjectName: true,
-	}
-	if got, want := ev.Title(), "修复登录问题"; got != want {
-		t.Errorf("Title = %q, 期望 %q", got, want)
-	}
-	// 设备、Agent 与项目配置仍可作为前缀。
-	ev.ShowDeviceName = true
-	ev.HideAgentName = false
-	ev.HideProjectName = false
-	if got, want := ev.Title(), "MacBookPro-claude-acn-修复登录问题"; got != want {
-		t.Errorf("Title = %q, 期望 %q", got, want)
-	}
-	// 项目名可以独立隐藏。
-	ev.HideProjectName = true
-	if got, want := ev.Title(), "MacBookPro-claude-修复登录问题"; got != want {
-		t.Errorf("Title = %q, 期望 %q", got, want)
-	}
-	// Agent 名可以独立隐藏。
-	ev.HideAgentName = true
-	if got, want := ev.Title(), "MacBookPro-修复登录问题"; got != want {
-		t.Errorf("Title = %q, 期望 %q", got, want)
-	}
-	// 隐藏所有可选前缀后仍保留会话名。
-	ev.ShowDeviceName = false
-	if got, want := ev.Title(), "修复登录问题"; got != want {
-		t.Errorf("Title = %q, 期望 %q", got, want)
-	}
-	// 配置的 Agent 名优先于来源默认名称。
-	if got := (Event{AgentName: "opus", Source: SourceClaude, Cwd: "/work/acn", SessionName: "排查构建"}).Title(); got != "opus-acn-排查构建" {
-		t.Errorf("Title = %q", got)
-	}
-	// 无 cwd 时不应出现空项目名。
-	if got := (Event{DeviceName: "workstation", ShowDeviceName: true, Source: SourceCodex, SessionName: "更新文档"}).Title(); got != "workstation-Codex-更新文档" {
-		t.Errorf("Title = %q", got)
-	}
-	// 取不到会话名时保持旧标题降级行为。
-	if got := (Event{Source: SourceCodex}).Title(); got != "Codex 任务完成" {
-		t.Errorf("Title = %q", got)
-	}
-	if got := (Event{HideAgentName: true, HideProjectName: true}).Title(); got != "任务完成" {
-		t.Errorf("Title = %q", got)
 	}
 }
 
@@ -80,75 +28,5 @@ func TestFormatDuration(t *testing.T) {
 		if got := FormatDuration(ms); got != want {
 			t.Errorf("FormatDuration(%d) = %q, 期望 %q", ms, got, want)
 		}
-	}
-}
-
-// 耗时未知时正文里不该出现「耗时」行。
-func TestBodyOmitsUnknownDuration(t *testing.T) {
-	now := time.Date(2026, 7, 26, 15, 4, 5, 0, time.UTC)
-	body := Event{Source: SourceCodex, Cwd: "/work/acn", Message: "完成"}.Body(now)
-
-	if strings.Contains(body, "耗时") {
-		t.Errorf("耗时未知却出现了耗时行:\n%s", body)
-	}
-	for _, want := range []string{"2026-07-26 15:04:05", "/work/acn", "完成"} {
-		if !strings.Contains(body, want) {
-			t.Errorf("正文缺少 %q:\n%s", want, body)
-		}
-	}
-}
-
-func TestBodyIncludesKnownDuration(t *testing.T) {
-	now := time.Date(2026, 7, 26, 15, 4, 5, 0, time.UTC)
-	body := Event{
-		Source: SourceClaude, Cwd: "/work/acn", Message: "任务已经完成", DurationMS: 90_000,
-	}.Body(now)
-
-	if !strings.Contains(body, "耗时：1m30s") {
-		t.Errorf("正文缺少耗时:\n%s", body)
-	}
-	want := "任务已经完成\n\n完成时间：2026-07-26 15:04:05\n耗时：1m30s\n目录：/work/acn"
-	if body != want {
-		t.Errorf("正文顺序错误:\n得到：%q\n期望：%q", body, want)
-	}
-}
-
-func TestBodyUsesConfiguredTimezone(t *testing.T) {
-	location, err := time.LoadLocation("Asia/Shanghai")
-	if err != nil {
-		t.Fatal(err)
-	}
-	event := Event{Source: SourceCodex}
-	event.SetLocation(location)
-
-	now := time.Date(2026, 7, 26, 15, 4, 5, 0, time.UTC)
-	if got, want := event.Body(now), "完成时间：2026-07-26 23:04:05"; got != want {
-		t.Errorf("配置上海时区后的正文 = %q，期望 %q", got, want)
-	}
-}
-
-func TestBodyWithoutMessageStartsWithDetails(t *testing.T) {
-	now := time.Date(2026, 7, 26, 15, 4, 5, 0, time.UTC)
-	body := Event{Source: SourceClaude, Cwd: "/work/acn"}.Body(now)
-
-	if strings.HasPrefix(body, "\n") || body != "完成时间：2026-07-26 15:04:05\n目录：/work/acn" {
-		t.Errorf("无回复时正文格式错误：%q", body)
-	}
-}
-
-// 超长回复要按字符截断（不能切断中文），并加省略号。
-func TestBodyTruncatesLongMessage(t *testing.T) {
-	long := strings.Repeat("中", DefaultMaxMessageLength+100)
-	body := Event{Source: SourceClaude, Message: long}.Body(time.Now())
-
-	if !strings.Contains(body, "…") {
-		t.Error("超长正文未被截断")
-	}
-	// 截断必须落在字符边界上，不能产生乱码。
-	if !strings.Contains(body, strings.Repeat("中", 100)) {
-		t.Error("截断破坏了多字节字符")
-	}
-	if strings.Count(body, "中") > messagePreviewRunes {
-		t.Errorf("截断后仍有 %d 个字符，超过上限 %d", strings.Count(body, "中"), messagePreviewRunes)
 	}
 }

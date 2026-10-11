@@ -8,10 +8,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/windyskr/agent-completion-notification/internal/config"
-	"github.com/windyskr/agent-completion-notification/internal/event"
+	"github.com/windyskr/agent-completion-notification/internal/message"
 )
 
 func TestSendPostsText(t *testing.T) {
@@ -31,19 +30,16 @@ func TestSendPostsText(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	n := New(config.Slack{WebhookURL: srv.URL})
-	n.now = func() time.Time { return time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC) }
-	ev := event.Event{Source: event.SourceClaude, Cwd: "/work/acn", SessionName: "修复通知", Message: "改好了"}
-	if err := n.Send(context.Background(), ev); err != nil {
+	msg := message.Message{Title: "修复通知", Reply: "改好了", Details: []string{"完成时间：2026-08-03 12:00:00", "目录：/work/acn"}}
+	if err := n.Send(context.Background(), msg); err != nil {
 		t.Fatal(err)
 	}
 
 	if method != http.MethodPost || !strings.HasPrefix(contentType, "application/json") {
 		t.Errorf("请求 = %s %s", method, contentType)
 	}
-	for _, want := range []string{"修复通知", "2026-08-03 12:00:00", "改好了", "/work/acn"} {
-		if !strings.Contains(payload.Text, want) {
-			t.Errorf("Slack 文本缺少 %q: %s", want, payload.Text)
-		}
+	if want := "修复通知\n\n改好了\n\n完成时间：2026-08-03 12:00:00\n目录：/work/acn"; payload.Text != want {
+		t.Errorf("Slack 文本 = %q, 期望 %q", payload.Text, want)
 	}
 }
 
@@ -53,7 +49,7 @@ func TestSendDetectsSlackError(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	err := New(config.Slack{WebhookURL: srv.URL}).Send(context.Background(), event.Event{})
+	err := New(config.Slack{WebhookURL: srv.URL}).Send(context.Background(), message.Message{})
 	if err == nil || !strings.Contains(err.Error(), "invalid_payload") {
 		t.Errorf("应识别 Slack 业务失败，得到 %v", err)
 	}
@@ -65,14 +61,14 @@ func TestSendReportsHTTPError(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	err := New(config.Slack{WebhookURL: srv.URL}).Send(context.Background(), event.Event{})
+	err := New(config.Slack{WebhookURL: srv.URL}).Send(context.Background(), message.Message{})
 	if err == nil || !strings.Contains(err.Error(), "503") {
 		t.Errorf("应报告 HTTP 503，得到 %v", err)
 	}
 }
 
 func TestSendRequiresWebhook(t *testing.T) {
-	if err := New(config.Slack{}).Send(context.Background(), event.Event{}); err == nil {
+	if err := New(config.Slack{}).Send(context.Background(), message.Message{}); err == nil {
 		t.Error("未配置 Slack URL 时应当报错")
 	}
 }

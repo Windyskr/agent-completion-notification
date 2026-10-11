@@ -15,6 +15,7 @@ import (
 	"github.com/windyskr/agent-completion-notification/internal/email"
 	"github.com/windyskr/agent-completion-notification/internal/event"
 	"github.com/windyskr/agent-completion-notification/internal/feishu"
+	"github.com/windyskr/agent-completion-notification/internal/message"
 	"github.com/windyskr/agent-completion-notification/internal/slack"
 	"github.com/windyskr/agent-completion-notification/internal/teams"
 	"github.com/windyskr/agent-completion-notification/internal/telegram"
@@ -27,10 +28,11 @@ import (
 // 正常请求在百毫秒量级，3 秒已是宽裕的上限。
 const SendTimeout = 3 * time.Second
 
-// Notifier 是通知渠道的最小契约。文案由 event 统一生成，渠道只负责协议转换与传输。
+// Notifier 是通知渠道的最小契约。文案由 render 统一生成，渠道只负责排版、协议
+// 转换与传输。
 type Notifier interface {
 	Name() string
-	Send(context.Context, event.Event) error
+	Send(context.Context, message.Message) error
 }
 
 // DeliveryResult 记录一个通知渠道的本次投递结果。
@@ -42,7 +44,9 @@ type DeliveryResult struct {
 
 // Report 记录一次通知判定与投递的完整结果。
 type Report struct {
-	Event          event.Event      `json:"event"`
+	Event event.Event `json:"event"`
+	// Message 是实际投递的通知；被跳过时为 nil。
+	Message        *message.Message `json:"message,omitempty"`
 	SkippedReason  string           `json:"skipped_reason,omitempty"`
 	DeliveryResult []DeliveryResult `json:"delivery"`
 	// Warnings 记录不影响投递、但需要用户修正的配置问题。
@@ -118,22 +122,14 @@ func Deliver(ctx context.Context, cfg config.Config, ev event.Event) (Report, er
 		report.SkippedReason = "未配置已启用的通知渠道"
 		return report, nil
 	}
-	if ev.DeviceName == "" {
-		ev.DeviceName = cfg.EffectiveDeviceName()
-	}
-	ev.AgentName = cfg.EffectiveAgentName(ev.Source)
-	ev.ShowDeviceName = cfg.ShowDeviceName
-	ev.HideAgentName = !cfg.ShowAgentName
-	ev.HideProjectName = !cfg.ShowProjectName
-	ev.SetMaxMessageLength(cfg.MaxMessageLength)
 	location, locationErr := cfg.NotificationLocation()
 	if locationErr != nil {
 		// 时区只影响正文里的时间显示，配置写错不该让整条通知发不出去。
 		location = time.Local
 		report.Warnings = append(report.Warnings, locationErr.Error()+"，已改用本地时区")
 	}
-	ev.SetLocation(location)
-	report.Event = ev
+	msg := render(cfg, ev, time.Now().In(location))
+	report.Message = &msg
 
 	ctx, cancel := context.WithTimeout(ctx, SendTimeout)
 	defer cancel()
@@ -146,7 +142,7 @@ func Deliver(ctx context.Context, cfg config.Config, ev event.Event) (Report, er
 		go func(index int, notifier Notifier) {
 			defer wg.Done()
 			result := DeliveryResult{Channel: notifier.Name()}
-			if sendErr := notifier.Send(ctx, ev); sendErr != nil {
+			if sendErr := notifier.Send(ctx, msg); sendErr != nil {
 				errs[index] = fmt.Errorf("%s: %w", notifier.Name(), sendErr)
 				result.Error = sendErr.Error()
 			} else {

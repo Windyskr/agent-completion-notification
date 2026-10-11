@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/windyskr/agent-completion-notification/internal/config"
-	"github.com/windyskr/agent-completion-notification/internal/event"
+	"github.com/windyskr/agent-completion-notification/internal/message"
 )
 
 type Notifier struct {
@@ -32,7 +32,7 @@ func New(cfg config.DingTalk) *Notifier {
 
 func (n *Notifier) Name() string { return "dingtalk" }
 
-func (n *Notifier) Send(ctx context.Context, ev event.Event) error {
+func (n *Notifier) Send(ctx context.Context, msg message.Message) error {
 	endpoint := strings.TrimSpace(n.cfg.WebhookURL)
 	if endpoint == "" {
 		return fmt.Errorf("未配置钉钉 webhook 地址")
@@ -52,8 +52,11 @@ func (n *Notifier) Send(ctx context.Context, ev event.Event) error {
 		parsed.RawQuery = query.Encode()
 	}
 	payload := map[string]any{
-		"msgtype":  "markdown",
-		"markdown": map[string]string{"title": ev.Title(), "text": "### " + ev.Title() + "\n\n" + ev.Body(now)},
+		"msgtype": "markdown",
+		"markdown": map[string]string{
+			"title": msg.Title,
+			"text":  msg.Body(message.Format{Header: "### " + msg.Title + "\n\n"}),
+		},
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {

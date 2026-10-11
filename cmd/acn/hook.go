@@ -115,6 +115,7 @@ func runHook(source string, stdin io.Reader, stderr io.Writer) {
 	}
 	report, err := notify.SendWithReport(context.Background(), cfg, ev)
 	entry.Event = &report.Event
+	entry.Notification = report.Message
 	entry.Skip = report.SkippedReason != ""
 	entry.SkippedReason = report.SkippedReason
 	entry.Delivery = report.DeliveryResult
