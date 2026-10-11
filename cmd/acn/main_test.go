@@ -238,6 +238,39 @@ func TestCmdConfigAgentNameVisibility(t *testing.T) {
 	}
 }
 
+// 环境变量只是运行时覆盖，修改其它配置项时不得把它们写进 config.json。
+func TestCmdConfigDoesNotPersistEnvOverrides(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv(config.EnvConfigDir, dir)
+	if err := cmdConfig([]string{"feishu-url", "https://example.com/file-key"}); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv(config.EnvWebhook, "https://example.com/env-key")
+	t.Setenv(config.EnvDeviceName, "env-device")
+	if err := cmdConfig([]string{"min-duration", "10"}); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(config.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text := string(data); strings.Contains(text, "env-key") || strings.Contains(text, "env-device") {
+		t.Errorf("环境变量覆盖值被写入配置文件:\n%s", text)
+	}
+	cfg, err := config.LoadFile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Feishu.WebhookURL != "https://example.com/file-key" || cfg.MinDurationSeconds != 10 {
+		t.Errorf("配置文件内容 = webhook %q, min-duration %d", cfg.Feishu.WebhookURL, cfg.MinDurationSeconds)
+	}
+	if cfg, err = config.Load(); err != nil || cfg.Feishu.WebhookURL != "https://example.com/env-key" {
+		t.Errorf("Load 仍应应用环境变量覆盖，得到 %q, %v", cfg.Feishu.WebhookURL, err)
+	}
+}
+
 func TestCmdConfigRejectsLegacyChannelNames(t *testing.T) {
 	t.Setenv(config.EnvConfigDir, t.TempDir())
 	for _, key := range []string{"webhook", "secret"} {

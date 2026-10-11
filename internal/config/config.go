@@ -213,9 +213,20 @@ func EventLogPath() string { return filepath.Join(Dir(), "events.jsonl") }
 // SocketPath 返回 daemon 监听的 Unix socket 路径。
 func SocketPath() string { return filepath.Join(Dir(), "acn.sock") }
 
-// Load 读取配置；文件不存在时返回默认配置而非报错，让 acn install 之前的
-// status / test 等命令仍可运行。
+// Load 读取配置并应用环境变量覆盖；文件不存在时返回默认配置而非报错，让
+// acn install 之前的 status / test 等命令仍可运行。
 func Load() (Config, error) {
+	cfg, err := LoadFile()
+	if err != nil {
+		return cfg, err
+	}
+	cfg.applyEnv()
+	return cfg, nil
+}
+
+// LoadFile 只读取配置文件，不应用环境变量覆盖。读出后要 Save 的场景必须用它，
+// 否则环境变量里的临时端点与密钥会被写回 config.json，并顶掉文件里原有的值。
+func LoadFile() (Config, error) {
 	cfg := Default()
 	data, err := os.ReadFile(Path())
 	switch {
@@ -230,7 +241,6 @@ func Load() (Config, error) {
 	default:
 		return cfg, fmt.Errorf("读取 %s 失败: %w", Path(), err)
 	}
-	cfg.applyEnv()
 	return cfg, nil
 }
 

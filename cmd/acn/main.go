@@ -458,7 +458,8 @@ func cmdStatus() error {
 }
 
 func cmdConfig(args []string) error {
-	cfg, err := config.Load()
+	// 改写后要落盘，只能基于文件本身，不能混入环境变量覆盖值。
+	cfg, err := config.LoadFile()
 	if err != nil {
 		return err
 	}
