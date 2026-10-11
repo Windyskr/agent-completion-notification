@@ -9,22 +9,14 @@
 package main
 
 import (
-	"bytes"
-	"context"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/windyskr/agent-completion-notification/internal/config"
 	"github.com/windyskr/agent-completion-notification/internal/event"
-	"github.com/windyskr/agent-completion-notification/internal/eventlog"
-	"github.com/windyskr/agent-completion-notification/internal/hook"
-	"github.com/windyskr/agent-completion-notification/internal/hookdedup"
 	"github.com/windyskr/agent-completion-notification/internal/install"
-	"github.com/windyskr/agent-completion-notification/internal/notify"
-	"github.com/windyskr/agent-completion-notification/internal/paseo"
 )
 
 // version 由构建时通过 -ldflags "-X main.version=..." 注入。
@@ -151,190 +143,6 @@ func run(args []string) error {
 		return nil
 	default:
 		return fmt.Errorf("未知命令 %q，运行 acn help 查看用法", args[0])
-	}
-}
-
-// cmdHook 处理来自 AI CLI 的回调。
-//
-// 无论内部发生什么都返回 nil，且**绝不往 stdout 写任何东西**：
-//   - 非零退出码会在用户终端里显示报错；
-//   - Codex 的 Stop hook 若在 stdout 收到 {"decision":"block"}，会自动续跑一轮。
-//
-// 通知失败远不如打断工作流严重，因此一切诊断信息只走 stderr。
-func cmdHook(args []string) error {
-	if len(args) == 0 {
-		return fmt.Errorf("用法：acn hook <claude|claude-question|claude-notification|claude-failure|codex|codex-permission|opencode>")
-	}
-
-	started := time.Now()
-	raw, readErr := hook.ReadRaw(os.Stdin)
-	if readErr != nil {
-		fmt.Fprintln(os.Stderr, "acn hook: "+readErr.Error())
-		return nil
-	}
-	ev, skip, err := buildHookEvent(args[0], bytes.NewReader(raw))
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "acn hook: "+err.Error())
-		writeEventLog(args[0], raw, nil, false, "", err, nil, nil, started)
-		return nil
-	}
-	if skip {
-		writeEventLog(args[0], raw, &ev, true, "上游事件无需推送", nil, nil, nil, started)
-		return nil
-	}
-	claimed, release, claimErr := hookdedup.Claim(args[0], ev.SessionID)
-	if claimErr != nil {
-		fmt.Fprintln(os.Stderr, "acn: 并发事件判定失败: "+claimErr.Error())
-	} else if !claimed {
-		writeEventLog(args[0], raw, &ev, true, "重复 hook 事件", nil, nil, nil, started)
-		return nil
-	} else {
-		defer release()
-	}
-	paseoDetails := enrichPaseoEvent(args[0], &ev)
-	if paseoDetails.TitleGeneration {
-		writeEventLog(args[0], raw, &ev, true, "Paseo 标题生成任务", nil, nil, nil, started, paseoDetails)
-		return nil
-	}
-	deliver(args[0], raw, ev, started, paseoDetails)
-	return nil
-}
-
-type paseoEventDetails struct {
-	AgentName            string
-	AgentLookupError     string
-	WorkspaceTitle       string
-	WorkspaceLookupError string
-	TitleGeneration      bool
-}
-
-// enrichPaseoEvent 回填 Paseo 的 Workspace 标题。Agent 名称通常来自初始 prompt，
-// 仅在 Workspace 标题不可用时作为回退。
-func enrichPaseoEvent(hookSource string, ev *event.Event) paseoEventDetails {
-	if (hookSource != "codex" && hookSource != "claude") || strings.TrimSpace(ev.SessionName) != "" {
-		return paseoEventDetails{}
-	}
-	agentID := strings.TrimSpace(os.Getenv("PASEO_AGENT_ID"))
-	if agentID == "" {
-		return paseoEventDetails{}
-	}
-	workspaceTitle, workspaceErr := paseo.WorkspaceTitle(agentID)
-	details := paseoEventDetails{WorkspaceTitle: workspaceTitle}
-	if workspaceErr != nil {
-		details.WorkspaceLookupError = workspaceErr.Error()
-	}
-	if workspaceTitle != "" {
-		ev.SessionName = workspaceTitle
-		return details
-	}
-	agentName, err := paseo.AgentName(agentID)
-	details.AgentName = agentName
-	if err != nil {
-		details.AgentLookupError = err.Error()
-	} else if agentName != "" {
-		ev.SessionName = agentName
-		return details
-	}
-	if hookSource == "codex" && paseo.IsTitleGenerationMessage(ev.Message) {
-		details.TitleGeneration = true
-	}
-	return details
-}
-
-// deliver 在当前进程内完成投递。
-//
-// 曾经这里有一条「先丢给常驻 daemon 异步发」的快路径，实测只省 78ms
-// （本地开销 45ms 两者相同，差的仅是一次约 80ms 的飞书往返），
-// 却要付出常驻服务、socket 生命周期与两套投递路径的代价，已移除。
-func deliver(hookSource string, raw []byte, ev event.Event, started time.Time, paseoDetails paseoEventDetails) {
-	cfg, err := config.Load()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "acn: 加载配置失败: "+err.Error())
-		writeEventLog(hookSource, raw, &ev, false, "", nil, err, nil, started, paseoDetails)
-		return
-	}
-
-	report, err := notify.SendWithReport(context.Background(), cfg, ev)
-	writeEventLogWithConfig(cfg, hookSource, raw, &report.Event, report.SkippedReason, err, report.DeliveryResult, started, paseoDetails)
-	switch {
-	case err != nil:
-		fmt.Fprintln(os.Stderr, "acn: 推送失败: "+err.Error())
-	case report.SkippedReason != "":
-		fmt.Fprintln(os.Stderr, "acn: 未推送（"+report.SkippedReason+"）")
-	}
-}
-
-func writeEventLogWithConfig(cfg config.Config, hookSource string, raw []byte, ev *event.Event, skipped string, deliveryErr error, delivery []notify.DeliveryResult, started time.Time, paseoDetails paseoEventDetails) {
-	if !cfg.EventLogEnabled {
-		return
-	}
-	entry := eventlog.Entry{
-		Timestamp:                 started,
-		HookSource:                hookSource,
-		RawPayload:                string(raw),
-		RawPayloadPreview:         eventlog.Preview(string(raw), 10),
-		PaseoAgentID:              strings.TrimSpace(os.Getenv("PASEO_AGENT_ID")),
-		PaseoTerminalID:           strings.TrimSpace(os.Getenv("PASEO_TERMINAL_ID")),
-		PaseoAgentName:            paseoDetails.AgentName,
-		PaseoAgentLookupError:     paseoDetails.AgentLookupError,
-		PaseoWorkspaceTitle:       paseoDetails.WorkspaceTitle,
-		PaseoWorkspaceLookupError: paseoDetails.WorkspaceLookupError,
-		PaseoTitleGeneration:      paseoDetails.TitleGeneration,
-		Event:                     ev,
-		Skip:                      skipped != "",
-		SkippedReason:             skipped,
-		Delivery:                  delivery,
-		ElapsedMS:                 time.Since(started).Milliseconds(),
-	}
-	if ev != nil {
-		entry.MessagePreview = eventlog.Preview(ev.Message, 10)
-	}
-	if deliveryErr != nil {
-		entry.DeliveryError = deliveryErr.Error()
-	}
-	if err := eventlog.Append(config.EventLogPath(), entry); err != nil {
-		fmt.Fprintln(os.Stderr, "acn: 写入事件日志失败: "+err.Error())
-	}
-}
-
-func writeEventLog(hookSource string, raw []byte, ev *event.Event, skip bool, skippedReason string, parseErr, configErr error, delivery []notify.DeliveryResult, started time.Time, details ...paseoEventDetails) {
-	cfg, err := config.Load()
-	if err != nil || !cfg.EventLogEnabled {
-		return
-	}
-	paseoDetails := paseoEventDetails{}
-	if len(details) > 0 {
-		paseoDetails = details[0]
-	}
-	entry := eventlog.Entry{
-		Timestamp:                 started,
-		HookSource:                hookSource,
-		RawPayload:                string(raw),
-		RawPayloadPreview:         eventlog.Preview(string(raw), 10),
-		PaseoAgentID:              strings.TrimSpace(os.Getenv("PASEO_AGENT_ID")),
-		PaseoTerminalID:           strings.TrimSpace(os.Getenv("PASEO_TERMINAL_ID")),
-		PaseoAgentName:            paseoDetails.AgentName,
-		PaseoAgentLookupError:     paseoDetails.AgentLookupError,
-		PaseoWorkspaceTitle:       paseoDetails.WorkspaceTitle,
-		PaseoWorkspaceLookupError: paseoDetails.WorkspaceLookupError,
-		PaseoTitleGeneration:      paseoDetails.TitleGeneration,
-		Event:                     ev,
-		Skip:                      skip,
-		SkippedReason:             skippedReason,
-		Delivery:                  delivery,
-		ElapsedMS:                 time.Since(started).Milliseconds(),
-	}
-	if ev != nil {
-		entry.MessagePreview = eventlog.Preview(ev.Message, 10)
-	}
-	if parseErr != nil {
-		entry.ParseError = parseErr.Error()
-	}
-	if configErr != nil {
-		entry.ConfigError = configErr.Error()
-	}
-	if err := eventlog.Append(config.EventLogPath(), entry); err != nil {
-		fmt.Fprintln(os.Stderr, "acn: 写入事件日志失败: "+err.Error())
 	}
 }
 
