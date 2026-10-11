@@ -1,6 +1,7 @@
 package install
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -175,6 +176,77 @@ func TestStripACNGroupsHandlesMixedGroup(t *testing.T) {
 	}
 	if len(g.Hooks) != 1 || g.Hooks[0].Command != "/usr/bin/say hi" {
 		t.Errorf("重写后的分组 = %+v, 应只保留用户那条", g.Hooks)
+	}
+}
+
+// 装上再卸掉，用户的 settings.json 应逐字节回到原样（缩进除外）：键顺序不变，
+// 命令里的 &、> 不被转义，acn 不认识的字段不丢。
+func TestInstallUninstallClaudeRoundTripsUserSettings(t *testing.T) {
+	home := withHome(t)
+	original := `{
+  "zeta": 1,
+  "model": "opus",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {"type": "command", "command": "notify-send done > /dev/null 2>&1 && echo ok", "statusMessage": "mine", "shell": "bash"}
+        ]
+      }
+    ]
+  },
+  "env": {"B": "2", "A": "1"}
+}`
+	path := writeSettings(t, home, original)
+
+	if err := installClaude("/usr/local/bin/acn"); err != nil {
+		t.Fatal(err)
+	}
+	installed, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text := string(installed); !strings.Contains(text, `"notify-send done > /dev/null 2>&1 && echo ok"`) {
+		t.Errorf("安装后用户命令被转义或改写:\n%s", text)
+	}
+	if err := uninstallClaude(); err != nil {
+		t.Fatal(err)
+	}
+
+	assertSameJSON(t, path, original)
+}
+
+// 混合分组只摘掉 acn 条目，分组与用户条目上 acn 不认识的字段必须原样保留。
+func TestUninstallClaudeMixedGroupKeepsUnknownFields(t *testing.T) {
+	home := withHome(t)
+	path := writeSettings(t, home, `{"hooks":{"Stop":[{"custom":{"x":1},"hooks":[`+
+		`{"type":"command","command":"mine.sh","statusMessage":"keep me","once":true},`+
+		`{"type":"command","command":"'/usr/local/bin/acn' hook claude","timeout":10}]}]}}`)
+
+	if err := uninstallClaude(); err != nil {
+		t.Fatal(err)
+	}
+
+	assertSameJSON(t, path, `{"hooks":{"Stop":[{"custom":{"x":1},"hooks":[`+
+		`{"type":"command","command":"mine.sh","statusMessage":"keep me","once":true}]}]}}`)
+}
+
+// assertSameJSON 忽略空白比较文件内容与期望 JSON，键顺序与转义形式都必须一致。
+func assertSameJSON(t *testing.T, path, want string) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got, expected bytes.Buffer
+	if err := json.Compact(&got, data); err != nil {
+		t.Fatalf("产出的 settings.json 不是合法 JSON: %v\n%s", err, data)
+	}
+	if err := json.Compact(&expected, []byte(want)); err != nil {
+		t.Fatal(err)
+	}
+	if got.String() != expected.String() {
+		t.Errorf("settings.json 内容不符\n得到: %s\n期望: %s", got.String(), expected.String())
 	}
 }
 

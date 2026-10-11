@@ -1,6 +1,7 @@
 package install
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -94,7 +95,7 @@ func installClaude(exe string) error {
 		if eventName == claudeEventPreToolUse {
 			entry.Matcher = askUserMatcher
 		}
-		raw, err := json.Marshal(entry)
+		raw, err := marshalJSON(entry)
 		if err != nil {
 			return nil, err
 		}
@@ -194,8 +195,9 @@ func recordedExe(groups []json.RawMessage) string {
 // editClaudeSettings 读取 settings.json，把 events 列出的每个事件数组交由
 // mutate 改写后写回。
 //
-// 除这些事件之外的所有内容都以 json.RawMessage 原样保留：既不会丢掉未知字段，
-// 也不会改动用户其它 hook 的写法。
+// 除这些事件之外的所有内容都以 json.RawMessage 原样保留，键顺序不变、不做
+// HTML 转义：既不会丢掉未知字段，也不会改动用户其它 hook 的写法。输出统一为
+// Claude Code 自身使用的两空格缩进。
 func editClaudeSettings(events []string, mutate func(eventName string, groups []json.RawMessage) ([]json.RawMessage, error)) error {
 	path := claudeSettingsPath()
 
@@ -219,27 +221,27 @@ func editClaudeSettings(events []string, mutate func(eventName string, groups []
 		}
 		// 空数组和空对象都清理掉，卸载后应当恢复成安装前的样子。
 		if len(next) == 0 {
-			delete(hooks, eventName)
+			hooks.delete(eventName)
 		} else {
-			raw, err := json.Marshal(next)
-			if err != nil {
-				return err
-			}
-			hooks[eventName] = raw
+			hooks.set(eventName, rawArray(next))
 		}
 	}
-	if len(hooks) == 0 {
-		delete(root, "hooks")
+	if hooks.empty() {
+		root.delete("hooks")
 	} else {
-		raw, err := json.Marshal(hooks)
+		raw, err := hooks.marshal()
 		if err != nil {
 			return err
 		}
-		root["hooks"] = raw
+		root.set("hooks", raw)
 	}
 
-	data, err := json.MarshalIndent(root, "", "  ")
+	compact, err := root.marshal()
 	if err != nil {
+		return err
+	}
+	var data bytes.Buffer
+	if err := json.Indent(&data, compact, "", "  "); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -248,21 +250,22 @@ func editClaudeSettings(events []string, mutate func(eventName string, groups []
 	if err := backup(path); err != nil {
 		return fmt.Errorf("备份失败: %w", err)
 	}
-	return writeFileAtomicPreservingMode(path, append(data, '\n'), 0o644)
+	data.WriteByte('\n')
+	return writeFileAtomicPreservingMode(path, data.Bytes(), 0o644)
 }
 
 // readClaudeHooks 只读地取出整个 hooks 对象；文件不存在时错误上抛，
 // 让调用方能区分「没装过」和「装了但读坏了」。
-func readClaudeHooks(path string) (map[string]json.RawMessage, error) {
+func readClaudeHooks(path string) (*jsonObject, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
 	if len(strings.TrimSpace(string(data))) == 0 {
-		return map[string]json.RawMessage{}, nil
+		return newJSONObject(), nil
 	}
-	var root map[string]json.RawMessage
-	if err := json.Unmarshal(data, &root); err != nil {
+	root, err := parseJSONObject(data)
+	if err != nil {
 		return nil, fmt.Errorf("解析 %s 失败: %w", path, err)
 	}
 	return readNestedObject(root, "hooks")
@@ -278,28 +281,28 @@ func readClaudeGroups(path string) ([]json.RawMessage, error) {
 }
 
 // stripACNGroups 剔除所有属于 acn 的 hook 条目，返回保留下来的分组以及
-// 「原本是否装过 acn」。只含 acn 条目的分组会被整组丢弃；混合分组则重写，
-// 仅去掉 acn 那一条。未被触及的分组保持原始字节，不做任何格式化。
+// 「原本是否装过 acn」。只含 acn 条目的分组会被整组丢弃；混合分组只替换
+// hooks 数组，仅去掉 acn 那一条，分组与其余条目的全部字段（含 acn 不认识的）
+// 都以原始字节保留。未被触及的分组保持原始字节，不做任何改动。
 func stripACNGroups(groups []json.RawMessage) ([]json.RawMessage, bool) {
 	kept := make([]json.RawMessage, 0, len(groups))
 	found := false
 
 	for _, raw := range groups {
-		var g hookGroup
-		if err := json.Unmarshal(raw, &g); err != nil {
+		group, entries, ok := parseHookGroup(raw)
+		if !ok {
 			kept = append(kept, raw) // 看不懂的分组一律原样保留
 			continue
 		}
-		remaining := make([]hookEntry, 0, len(g.Hooks))
-		hit := false
-		for _, h := range g.Hooks {
-			if isACNHook(h) {
-				hit = true
+		remaining := make([]json.RawMessage, 0, len(entries))
+		for _, entry := range entries {
+			var h hookEntry
+			if json.Unmarshal(entry, &h) == nil && isACNHook(h) {
 				continue
 			}
-			remaining = append(remaining, h)
+			remaining = append(remaining, entry)
 		}
-		if !hit {
+		if len(remaining) == len(entries) {
 			kept = append(kept, raw)
 			continue
 		}
@@ -307,12 +310,32 @@ func stripACNGroups(groups []json.RawMessage) ([]json.RawMessage, bool) {
 		if len(remaining) == 0 {
 			continue
 		}
-		g.Hooks = remaining
-		if rewritten, err := json.Marshal(g); err == nil {
-			kept = append(kept, rewritten)
+		group.set("hooks", rawArray(remaining))
+		rewritten, err := group.marshal()
+		if err != nil {
+			kept = append(kept, raw)
+			continue
 		}
+		kept = append(kept, rewritten)
 	}
 	return kept, found
+}
+
+// parseHookGroup 把分组解析为有序对象及其 hooks 条目的原始字节。
+func parseHookGroup(raw json.RawMessage) (*jsonObject, []json.RawMessage, bool) {
+	group, err := parseJSONObject(raw)
+	if err != nil {
+		return nil, nil, false
+	}
+	hooksRaw, ok := group.get("hooks")
+	if !ok {
+		return group, nil, true
+	}
+	var entries []json.RawMessage
+	if err := json.Unmarshal(hooksRaw, &entries); err != nil {
+		return nil, nil, false
+	}
+	return group, entries, true
 }
 
 // isACNCommand 判断一条 hook 命令是否由 acn 安装。二进制固定名为 acn，
@@ -337,40 +360,40 @@ func isACNExecForm(h hookEntry) bool {
 }
 
 // readJSONObject 读取 JSON 对象；文件不存在时返回空对象，让首次安装能直接创建。
-func readJSONObject(path string) (map[string]json.RawMessage, error) {
+func readJSONObject(path string) (*jsonObject, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return map[string]json.RawMessage{}, nil
+			return newJSONObject(), nil
 		}
 		return nil, err
 	}
 	if len(strings.TrimSpace(string(data))) == 0 {
-		return map[string]json.RawMessage{}, nil
+		return newJSONObject(), nil
 	}
-	root := map[string]json.RawMessage{}
-	if err := json.Unmarshal(data, &root); err != nil {
+	root, err := parseJSONObject(data)
+	if err != nil {
 		return nil, fmt.Errorf("解析 %s 失败（请先修复该文件）: %w", path, err)
 	}
 	return root, nil
 }
 
 // readNestedObject 取出对象型字段，缺失时返回空对象。
-func readNestedObject(root map[string]json.RawMessage, key string) (map[string]json.RawMessage, error) {
-	raw, ok := root[key]
+func readNestedObject(root *jsonObject, key string) (*jsonObject, error) {
+	raw, ok := root.get(key)
 	if !ok || len(raw) == 0 || string(raw) == "null" {
-		return map[string]json.RawMessage{}, nil
+		return newJSONObject(), nil
 	}
-	out := map[string]json.RawMessage{}
-	if err := json.Unmarshal(raw, &out); err != nil {
+	out, err := parseJSONObject(raw)
+	if err != nil {
 		return nil, fmt.Errorf("字段 %q 不是对象: %w", key, err)
 	}
 	return out, nil
 }
 
 // readGroups 取出指定事件的分组数组，缺失时返回空切片。
-func readGroups(hooks map[string]json.RawMessage, eventName string) ([]json.RawMessage, error) {
-	raw, ok := hooks[eventName]
+func readGroups(hooks *jsonObject, eventName string) ([]json.RawMessage, error) {
+	raw, ok := hooks.get(eventName)
 	if !ok || len(raw) == 0 || string(raw) == "null" {
 		return nil, nil
 	}
