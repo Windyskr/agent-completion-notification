@@ -119,3 +119,20 @@ func TestSendRequiresWebhook(t *testing.T) {
 		t.Error("未配置地址时应当报错")
 	}
 }
+
+// 连接失败时错误里不得出现带机器人 token 的完整地址——它会进 stderr 和事件日志。
+func TestSendErrorHidesWebhookToken(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	webhook := srv.URL + "/open-apis/bot/v2/hook/SECRET-TOKEN"
+	srv.Close()
+
+	for _, url := range []string{webhook, "http://[::1/hook/SECRET-TOKEN"} {
+		err := New(config.Feishu{WebhookURL: url}).Send(context.Background(), event.Event{})
+		if err == nil {
+			t.Fatalf("%s: 应当报错", url)
+		}
+		if strings.Contains(err.Error(), "SECRET-TOKEN") {
+			t.Errorf("错误泄露了 webhook token: %v", err)
+		}
+	}
+}

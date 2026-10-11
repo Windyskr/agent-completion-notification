@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -39,9 +40,14 @@ func (n *Notifier) Name() string { return "feishu" }
 
 // Send 以富文本（post）消息推送，标题与正文由 Event 统一组装。
 func (n *Notifier) Send(ctx context.Context, ev event.Event) error {
-	url := strings.TrimSpace(n.cfg.WebhookURL)
-	if url == "" {
+	endpoint := strings.TrimSpace(n.cfg.WebhookURL)
+	if endpoint == "" {
 		return fmt.Errorf("未配置飞书 webhook 地址")
+	}
+	// 先校验再建请求：url.Parse 的错误会带上含机器人 token 的完整地址。
+	parsed, err := url.Parse(endpoint)
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return fmt.Errorf("飞书 webhook 地址格式无效")
 	}
 
 	now := n.now()
@@ -68,7 +74,7 @@ func (n *Notifier) Send(ctx context.Context, ev event.Event) error {
 		return err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -76,7 +82,7 @@ func (n *Notifier) Send(ctx context.Context, ev event.Event) error {
 
 	resp, err := n.client.Do(req)
 	if err != nil {
-		return err
+		return fmt.Errorf("飞书请求失败: %w", unwrapURLError(err))
 	}
 	defer resp.Body.Close()
 
@@ -85,6 +91,18 @@ func (n *Notifier) Send(ctx context.Context, ev event.Event) error {
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
 	}
 	return checkResponse(raw)
+}
+
+// unwrapURLError 剥掉 url.Error：它的 Error() 会包含带机器人 token 的完整地址，
+// 而错误会写进 stderr 与事件日志。
+func unwrapURLError(err error) error {
+	for {
+		urlErr, ok := err.(*url.Error)
+		if !ok {
+			return err
+		}
+		err = urlErr.Err
+	}
 }
 
 // sign 生成飞书签名：以 "{timestamp}\n{secret}" 为 HMAC-SHA256 密钥对空串签名。
