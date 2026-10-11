@@ -34,6 +34,7 @@ type Entry struct {
 	ConfigError               string                  `json:"config_error,omitempty"`
 	Delivery                  []notify.DeliveryResult `json:"delivery,omitempty"`
 	DeliveryError             string                  `json:"delivery_error,omitempty"`
+	Warnings                  []string                `json:"warnings,omitempty"`
 	ElapsedMS                 int64                   `json:"elapsed_ms"`
 }
 

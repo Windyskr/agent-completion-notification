@@ -300,3 +300,29 @@ func TestRunHookReportsBrokenConfig(t *testing.T) {
 		t.Errorf("stderr = %q, 期望报告配置加载失败", stderr)
 	}
 }
+
+func TestRunHookWarnsOnInvalidTimezone(t *testing.T) {
+	hookEnv(t)
+	var slack slackCapture
+	saveHookConfig(t, slack.serve(t).URL)
+	cfg, err := config.LoadFile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.NotificationTimezone = "Mars/Olympus_Mons"
+	if err := config.Save(cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	stderr := runHookForTest(t, "codex", `{"session_id":"s1","last_assistant_message":"完成"}`)
+
+	if len(slack.received()) != 1 {
+		t.Error("无效时区时仍应推送")
+	}
+	if !strings.Contains(stderr, "已改用本地时区") {
+		t.Errorf("stderr = %q, 期望提示时区回退", stderr)
+	}
+	if entry := onlyLogEntry(t); len(entry.Warnings) != 1 {
+		t.Errorf("事件日志应记录警告: %+v", entry)
+	}
+}

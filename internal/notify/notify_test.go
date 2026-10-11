@@ -315,3 +315,28 @@ func TestDeliverBypassesGate(t *testing.T) {
 		t.Errorf("投递结果 = %+v", report.DeliveryResult)
 	}
 }
+
+// 时区只是显示偏好，写错时应回退本地时区继续投递，而不是整条通知失败。
+func TestDeliverFallsBackOnInvalidTimezone(t *testing.T) {
+	var hit bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hit = true
+		io.WriteString(w, `{"code":0}`)
+	}))
+	defer srv.Close()
+
+	cfg := config.Config{
+		Feishu:               config.Feishu{WebhookURL: srv.URL},
+		NotificationTimezone: "Mars/Olympus_Mons",
+	}
+	report, err := Deliver(context.Background(), cfg, event.Event{Source: event.SourceClaude})
+	if err != nil {
+		t.Fatalf("无效时区不应导致投递失败: %v", err)
+	}
+	if !hit {
+		t.Error("无效时区时未发出请求")
+	}
+	if len(report.Warnings) != 1 || !strings.Contains(report.Warnings[0], "Mars/Olympus_Mons") {
+		t.Errorf("Warnings = %q, 期望说明无效时区", report.Warnings)
+	}
+}

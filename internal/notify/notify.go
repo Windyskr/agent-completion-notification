@@ -45,6 +45,8 @@ type Report struct {
 	Event          event.Event      `json:"event"`
 	SkippedReason  string           `json:"skipped_reason,omitempty"`
 	DeliveryResult []DeliveryResult `json:"delivery"`
+	// Warnings 记录不影响投递、但需要用户修正的配置问题。
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // Gate 判断该事件是否应当推送，返回的字符串为不推送的原因。
@@ -126,7 +128,9 @@ func Deliver(ctx context.Context, cfg config.Config, ev event.Event) (Report, er
 	ev.SetMaxMessageLength(cfg.MaxMessageLength)
 	location, locationErr := cfg.NotificationLocation()
 	if locationErr != nil {
-		return report, locationErr
+		// 时区只影响正文里的时间显示，配置写错不该让整条通知发不出去。
+		location = time.Local
+		report.Warnings = append(report.Warnings, locationErr.Error()+"，已改用本地时区")
 	}
 	ev.SetLocation(location)
 	report.Event = ev

@@ -319,6 +319,11 @@ func checkDelivery(cfg config.Config) check {
 		return check{"实际推送", levelFail, err.Error(), "检查通知渠道地址与网络"}
 	case report.SkippedReason != "":
 		return check{"实际推送", levelWarn, "未推送（" + report.SkippedReason + "）", ""}
+	case len(report.Warnings) > 0:
+		return check{
+			"实际推送", levelWarn, "已发出，但" + strings.Join(report.Warnings, "；"),
+			"acn config notification-timezone <IANA 时区|local>",
+		}
 	}
 	return check{"实际推送", levelOK, "已发出，请确认已配置渠道是否收到", ""}
 }

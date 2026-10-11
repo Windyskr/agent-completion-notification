@@ -118,6 +118,10 @@ func runHook(source string, stdin io.Reader, stderr io.Writer) {
 	entry.Skip = report.SkippedReason != ""
 	entry.SkippedReason = report.SkippedReason
 	entry.Delivery = report.DeliveryResult
+	entry.Warnings = report.Warnings
+	for _, warning := range report.Warnings {
+		fmt.Fprintln(stderr, "acn: "+warning)
+	}
 	switch {
 	case err != nil:
 		entry.DeliveryError = err.Error()
