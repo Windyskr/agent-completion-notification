@@ -2,19 +2,16 @@
 package bark
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
-	"net/url"
 	"strings"
-	"time"
 
 	"github.com/windyskr/agent-completion-notification/internal/config"
 	"github.com/windyskr/agent-completion-notification/internal/event"
 	"github.com/windyskr/agent-completion-notification/internal/message"
+	"github.com/windyskr/agent-completion-notification/internal/webhook"
 )
 
 const (
@@ -31,7 +28,7 @@ type Notifier struct {
 func New(cfg config.Bark) *Notifier {
 	return &Notifier{
 		cfg:    cfg,
-		client: &http.Client{Timeout: 10 * time.Second},
+		client: webhook.NewClient(),
 	}
 }
 
@@ -39,13 +36,9 @@ func (n *Notifier) Name() string { return "bark" }
 
 // Send 使用 Bark 官方支持的 JSON POST，避免把中文正文拼进 URL。
 func (n *Notifier) Send(ctx context.Context, msg message.Message) error {
-	endpoint := strings.TrimSpace(n.cfg.URL)
-	if endpoint == "" {
-		return fmt.Errorf("未配置 Bark 设备端点")
-	}
-	parsed, err := url.Parse(endpoint)
-	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-		return fmt.Errorf("Bark 设备端点格式无效")
+	endpoint, err := webhook.ParseEndpoint(n.cfg.URL, "Bark 设备端点")
+	if err != nil {
+		return err
 	}
 	payload := struct {
 		Title    string `json:"title"`
@@ -65,36 +58,14 @@ func (n *Notifier) Send(ctx context.Context, msg message.Message) error {
 	if n.cfg.UpdateBySession {
 		payload.ID = msg.SessionID
 	}
-	body, err := json.Marshal(payload)
+	resp, err := webhook.PostJSON(ctx, n.client, endpoint, payload)
 	if err != nil {
-		return err
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("创建 Bark 请求失败: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json; charset=utf-8")
-
-	resp, err := n.client.Do(req)
-	if err != nil {
-		// url.Error.String 会包含带设备 key 的完整 URL，只保留底层错误。
-		for {
-			urlErr, ok := err.(*url.Error)
-			if !ok {
-				break
-			}
-			err = urlErr.Err
-		}
 		return fmt.Errorf("Bark 请求失败: %w", err)
 	}
-	defer resp.Body.Close()
-
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<10))
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+	if err := resp.CheckStatus(); err != nil {
+		return err
 	}
-	return checkResponse(raw)
+	return checkResponse(resp.Body)
 }
 
 func iconForSource(source string) string {

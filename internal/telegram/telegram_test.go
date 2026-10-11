@@ -22,6 +22,9 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { re
 func captureText(t *testing.T, n *Notifier, text *string) {
 	t.Helper()
 	n.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Host != "api.telegram.org" || r.URL.Path != "/bot123:abc/sendMessage" {
+			t.Errorf("请求地址 = %s", r.URL.Redacted())
+		}
 		var payload struct {
 			Text string `json:"text"`
 		}

@@ -2,18 +2,16 @@
 package telegram
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/windyskr/agent-completion-notification/internal/config"
 	"github.com/windyskr/agent-completion-notification/internal/message"
+	"github.com/windyskr/agent-completion-notification/internal/webhook"
 )
 
 // maxTextLength 是 sendMessage 的 text 上限，按 UTF-16 码元计；超出会被整条拒收。
@@ -25,8 +23,9 @@ type Notifier struct {
 }
 
 func New(cfg config.Telegram) *Notifier {
-	return &Notifier{cfg: cfg, client: &http.Client{Timeout: 10 * time.Second}}
+	return &Notifier{cfg: cfg, client: webhook.NewClient()}
 }
+
 func (n *Notifier) Name() string { return "telegram" }
 
 func (n *Notifier) Send(ctx context.Context, msg message.Message) error {
@@ -34,43 +33,27 @@ func (n *Notifier) Send(ctx context.Context, msg message.Message) error {
 	if token == "" || chatID == "" {
 		return fmt.Errorf("Telegram bot token 或 chat_id 未配置")
 	}
-	endpoint := "https://api.telegram.org/bot" + url.PathEscape(token) + "/sendMessage"
+	// 直接构造 URL 而不是拼字符串再解析：token 在路径里，解析失败的错误会带出它。
+	endpoint := &url.URL{Scheme: "https", Host: "api.telegram.org", Path: "/bot" + token + "/sendMessage"}
 	payload := map[string]any{
 		"chat_id":                  chatID,
 		"text":                     msg.Body(message.Format{Header: msg.Title + "\n\n", MaxUTF16: maxTextLength}),
 		"disable_web_page_preview": true,
 	}
-	body, err := json.Marshal(payload)
+	resp, err := webhook.PostJSON(ctx, n.client, endpoint, payload)
 	if err != nil {
-		return err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json; charset=utf-8")
-	resp, err := n.client.Do(req)
-	if err != nil {
-		for {
-			u, ok := err.(*url.Error)
-			if !ok {
-				break
-			}
-			err = u.Err
-		}
 		return fmt.Errorf("Telegram 请求失败: %w", err)
 	}
-	defer resp.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<10))
+	// Bot API 失败时也返回 JSON，description 比状态码更能说明原因，因此先解析再判定。
 	var result struct {
 		OK          bool   `json:"ok"`
 		ErrorCode   int    `json:"error_code"`
 		Description string `json:"description"`
 	}
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return fmt.Errorf("无法解析 Telegram 应答: %s", strings.TrimSpace(string(raw)))
+	if err := json.Unmarshal(resp.Body, &result); err != nil {
+		return fmt.Errorf("无法解析 Telegram 应答: %s", strings.TrimSpace(string(resp.Body)))
 	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 || !result.OK {
+	if resp.CheckStatus() != nil || !result.OK {
 		return fmt.Errorf("Telegram 返回 HTTP %d code=%d: %s", resp.StatusCode, result.ErrorCode, result.Description)
 	}
 	return nil

@@ -2,22 +2,20 @@
 package feishu
 
 import (
-	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/windyskr/agent-completion-notification/internal/config"
 	"github.com/windyskr/agent-completion-notification/internal/message"
+	"github.com/windyskr/agent-completion-notification/internal/webhook"
 )
 
 // Notifier 实现 notify.Notifier。
@@ -31,7 +29,7 @@ type Notifier struct {
 func New(cfg config.Feishu) *Notifier {
 	return &Notifier{
 		cfg:    cfg,
-		client: &http.Client{Timeout: 10 * time.Second},
+		client: webhook.NewClient(),
 		now:    time.Now,
 	}
 }
@@ -40,17 +38,10 @@ func (n *Notifier) Name() string { return "feishu" }
 
 // Send 以富文本（post）消息推送，标题与正文已由 notify 统一渲染。
 func (n *Notifier) Send(ctx context.Context, msg message.Message) error {
-	endpoint := strings.TrimSpace(n.cfg.WebhookURL)
-	if endpoint == "" {
-		return fmt.Errorf("未配置飞书 webhook 地址")
+	endpoint, err := webhook.ParseEndpoint(n.cfg.WebhookURL, "飞书 webhook 地址")
+	if err != nil {
+		return err
 	}
-	// 先校验再建请求：url.Parse 的错误会带上含机器人 token 的完整地址。
-	parsed, err := url.Parse(endpoint)
-	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-		return fmt.Errorf("飞书 webhook 地址格式无效")
-	}
-
-	now := n.now()
 	payload := map[string]any{
 		"msg_type": "post",
 		"content": map[string]any{
@@ -64,45 +55,19 @@ func (n *Notifier) Send(ctx context.Context, msg message.Message) error {
 	}
 	// 机器人开启「签名校验」时必须带 timestamp 与 sign，否则飞书拒收。
 	if secret := strings.TrimSpace(n.cfg.Secret); secret != "" {
-		ts := now.Unix()
+		ts := n.now().Unix()
 		payload["timestamp"] = strconv.FormatInt(ts, 10)
 		payload["sign"] = sign(ts, secret)
 	}
 
-	body, err := json.Marshal(payload)
+	resp, err := webhook.PostJSON(ctx, n.client, endpoint, payload)
 	if err != nil {
+		return fmt.Errorf("飞书请求失败: %w", err)
+	}
+	if err := resp.CheckStatus(); err != nil {
 		return err
 	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := n.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("飞书请求失败: %w", unwrapURLError(err))
-	}
-	defer resp.Body.Close()
-
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<10))
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
-	}
-	return checkResponse(raw)
-}
-
-// unwrapURLError 剥掉 url.Error：它的 Error() 会包含带机器人 token 的完整地址，
-// 而错误会写进 stderr 与事件日志。
-func unwrapURLError(err error) error {
-	for {
-		urlErr, ok := err.(*url.Error)
-		if !ok {
-			return err
-		}
-		err = urlErr.Err
-	}
+	return checkResponse(resp.Body)
 }
 
 // sign 生成飞书签名：以 "{timestamp}\n{secret}" 为 HMAC-SHA256 密钥对空串签名。

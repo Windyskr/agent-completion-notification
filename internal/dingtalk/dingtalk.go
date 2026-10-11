@@ -2,22 +2,20 @@
 package dingtalk
 
 import (
-	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/windyskr/agent-completion-notification/internal/config"
 	"github.com/windyskr/agent-completion-notification/internal/message"
+	"github.com/windyskr/agent-completion-notification/internal/webhook"
 )
 
 type Notifier struct {
@@ -27,29 +25,25 @@ type Notifier struct {
 }
 
 func New(cfg config.DingTalk) *Notifier {
-	return &Notifier{cfg: cfg, client: &http.Client{Timeout: 10 * time.Second}, now: time.Now}
+	return &Notifier{cfg: cfg, client: webhook.NewClient(), now: time.Now}
 }
 
 func (n *Notifier) Name() string { return "dingtalk" }
 
 func (n *Notifier) Send(ctx context.Context, msg message.Message) error {
-	endpoint := strings.TrimSpace(n.cfg.WebhookURL)
-	if endpoint == "" {
-		return fmt.Errorf("未配置钉钉 webhook 地址")
+	endpoint, err := webhook.ParseEndpoint(n.cfg.WebhookURL, "钉钉 webhook 地址")
+	if err != nil {
+		return err
 	}
-	parsed, err := url.Parse(endpoint)
-	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-		return fmt.Errorf("钉钉 webhook 地址格式无效")
-	}
-	now := n.now()
+	// 机器人开启「加签」时，timestamp 与 sign 以查询参数附在地址上。
 	if secret := strings.TrimSpace(n.cfg.Secret); secret != "" {
-		timestamp := now.UnixMilli()
+		timestamp := n.now().UnixMilli()
 		mac := hmac.New(sha256.New, []byte(secret))
 		_, _ = mac.Write([]byte(strconv.FormatInt(timestamp, 10) + "\n" + secret))
-		query := parsed.Query()
+		query := endpoint.Query()
 		query.Set("timestamp", strconv.FormatInt(timestamp, 10))
 		query.Set("sign", base64.StdEncoding.EncodeToString(mac.Sum(nil)))
-		parsed.RawQuery = query.Encode()
+		endpoint.RawQuery = query.Encode()
 	}
 	payload := map[string]any{
 		"msgtype": "markdown",
@@ -58,43 +52,22 @@ func (n *Notifier) Send(ctx context.Context, msg message.Message) error {
 			"text":  msg.Body(message.Format{Header: "### " + msg.Title + "\n\n", HardLineBreaks: true}),
 		},
 	}
-	body, err := json.Marshal(payload)
+	resp, err := webhook.PostJSON(ctx, n.client, endpoint, payload)
 	if err != nil {
+		return fmt.Errorf("钉钉请求失败: %w", err)
+	}
+	if err := resp.CheckStatus(); err != nil {
 		return err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, parsed.String(), bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json; charset=utf-8")
-	resp, err := n.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("钉钉请求失败: %w", unwrapURLError(err))
-	}
-	defer resp.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<10))
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
 	}
 	var result struct {
 		ErrCode int    `json:"errcode"`
 		ErrMsg  string `json:"errmsg"`
 	}
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return fmt.Errorf("无法解析钉钉应答: %s", strings.TrimSpace(string(raw)))
+	if err := json.Unmarshal(resp.Body, &result); err != nil {
+		return fmt.Errorf("无法解析钉钉应答: %s", strings.TrimSpace(string(resp.Body)))
 	}
 	if result.ErrCode != 0 {
 		return fmt.Errorf("钉钉返回 errcode=%d: %s", result.ErrCode, result.ErrMsg)
 	}
 	return nil
-}
-
-func unwrapURLError(err error) error {
-	for {
-		u, ok := err.(*url.Error)
-		if !ok {
-			return err
-		}
-		err = u.Err
-	}
 }

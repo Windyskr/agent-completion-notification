@@ -2,18 +2,13 @@
 package teams
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
-	"net/url"
-	"strings"
-	"time"
 
 	"github.com/windyskr/agent-completion-notification/internal/config"
 	"github.com/windyskr/agent-completion-notification/internal/message"
+	"github.com/windyskr/agent-completion-notification/internal/webhook"
 )
 
 type Notifier struct {
@@ -22,21 +17,16 @@ type Notifier struct {
 }
 
 func New(cfg config.Teams) *Notifier {
-	return &Notifier{cfg: cfg, client: &http.Client{Timeout: 10 * time.Second}}
+	return &Notifier{cfg: cfg, client: webhook.NewClient()}
 }
 
 func (n *Notifier) Name() string { return "teams" }
 
 func (n *Notifier) Send(ctx context.Context, msg message.Message) error {
-	endpoint := strings.TrimSpace(n.cfg.WebhookURL)
-	parsed, err := url.Parse(endpoint)
-	if endpoint == "" {
-		return fmt.Errorf("未配置 Teams webhook 地址")
+	endpoint, err := webhook.ParseEndpoint(n.cfg.WebhookURL, "Teams webhook 地址")
+	if err != nil {
+		return err
 	}
-	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-		return fmt.Errorf("Teams webhook 地址格式无效")
-	}
-
 	payload := struct {
 		Type       string    `json:"@type"`
 		Context    string    `json:"@context"`
@@ -52,40 +42,14 @@ func (n *Notifier) Send(ctx context.Context, msg message.Message) error {
 		Title:      msg.Title,
 		Sections:   []section{{Text: msg.Body(message.Format{HardLineBreaks: true}), Markdown: true}},
 	}
-	body, err := json.Marshal(payload)
+	resp, err := webhook.PostJSON(ctx, n.client, endpoint, payload)
 	if err != nil {
-		return err
+		return fmt.Errorf("Teams 请求失败: %w", err)
 	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("创建 Teams 请求失败: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json; charset=utf-8")
-	resp, err := n.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("Teams 请求失败: %w", unwrapURLError(err))
-	}
-	defer resp.Body.Close()
-
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<10))
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
-	}
-	return nil
+	return resp.CheckStatus()
 }
 
 type section struct {
 	Text     string `json:"text"`
 	Markdown bool   `json:"markdown"`
-}
-
-func unwrapURLError(err error) error {
-	for {
-		urlErr, ok := err.(*url.Error)
-		if !ok {
-			return err
-		}
-		err = urlErr.Err
-	}
 }

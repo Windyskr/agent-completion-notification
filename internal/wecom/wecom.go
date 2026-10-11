@@ -2,18 +2,15 @@
 package wecom
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
-	"net/url"
 	"strings"
-	"time"
 
 	"github.com/windyskr/agent-completion-notification/internal/config"
 	"github.com/windyskr/agent-completion-notification/internal/message"
+	"github.com/windyskr/agent-completion-notification/internal/webhook"
 )
 
 // maxContentBytes 是企微 markdown 消息 content 的上限；超出会被整条拒收。
@@ -25,18 +22,15 @@ type Notifier struct {
 }
 
 func New(cfg config.WeCom) *Notifier {
-	return &Notifier{cfg: cfg, client: &http.Client{Timeout: 10 * time.Second}}
+	return &Notifier{cfg: cfg, client: webhook.NewClient()}
 }
+
 func (n *Notifier) Name() string { return "wecom" }
 
 func (n *Notifier) Send(ctx context.Context, msg message.Message) error {
-	endpoint := strings.TrimSpace(n.cfg.WebhookURL)
-	parsed, err := url.Parse(endpoint)
-	if endpoint == "" {
-		return fmt.Errorf("未配置企微 webhook 地址")
-	}
-	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-		return fmt.Errorf("企微 webhook 地址格式无效")
+	endpoint, err := webhook.ParseEndpoint(n.cfg.WebhookURL, "企微 webhook 地址")
+	if err != nil {
+		return err
 	}
 	payload := map[string]any{"msgtype": "markdown", "markdown": map[string]string{
 		"content": msg.Body(message.Format{
@@ -45,37 +39,19 @@ func (n *Notifier) Send(ctx context.Context, msg message.Message) error {
 			MaxBytes:       maxContentBytes,
 		}),
 	}}
-	body, err := json.Marshal(payload)
+	resp, err := webhook.PostJSON(ctx, n.client, endpoint, payload)
 	if err != nil {
-		return err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json; charset=utf-8")
-	resp, err := n.client.Do(req)
-	if err != nil {
-		for {
-			u, ok := err.(*url.Error)
-			if !ok {
-				break
-			}
-			err = u.Err
-		}
 		return fmt.Errorf("企微请求失败: %w", err)
 	}
-	defer resp.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<10))
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+	if err := resp.CheckStatus(); err != nil {
+		return err
 	}
 	var result struct {
 		ErrCode int    `json:"errcode"`
 		ErrMsg  string `json:"errmsg"`
 	}
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return fmt.Errorf("无法解析企微应答: %s", strings.TrimSpace(string(raw)))
+	if err := json.Unmarshal(resp.Body, &result); err != nil {
+		return fmt.Errorf("无法解析企微应答: %s", strings.TrimSpace(string(resp.Body)))
 	}
 	if result.ErrCode != 0 {
 		return fmt.Errorf("企微返回 errcode=%d: %s", result.ErrCode, result.ErrMsg)
