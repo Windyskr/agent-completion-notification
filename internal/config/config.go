@@ -361,18 +361,6 @@ func (c Config) EmailReady() bool {
 func (c Config) SlackReady() bool { return strings.TrimSpace(c.Slack.WebhookURL) != "" }
 func (c Config) TeamsReady() bool { return strings.TrimSpace(c.Teams.WebhookURL) != "" }
 
-// DeliveryReady 判断是否至少有一个已启用且配置完整的通知渠道。
-func (c Config) DeliveryReady() bool {
-	return (c.ChannelEnabled(ChannelFeishu) && c.FeishuReady()) ||
-		(c.ChannelEnabled(ChannelBark) && c.BarkReady()) ||
-		(c.ChannelEnabled(ChannelDingTalk) && c.DingTalkReady()) ||
-		(c.ChannelEnabled(ChannelWeCom) && c.WeComReady()) ||
-		(c.ChannelEnabled(ChannelTelegram) && c.TelegramReady()) ||
-		(c.ChannelEnabled(ChannelEmail) && c.EmailReady()) ||
-		(c.ChannelEnabled(ChannelSlack) && c.SlackReady()) ||
-		(c.ChannelEnabled(ChannelTeams) && c.TeamsReady())
-}
-
 // EffectiveDeviceName 返回通知中展示的设备名。显式配置优先，无法读取
 // hostname 时使用稳定的占位名称，确保标题始终保留设备前缀。
 func (c Config) EffectiveDeviceName() string {

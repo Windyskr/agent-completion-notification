@@ -93,30 +93,6 @@ func TestLoadAppliesSlackAndTeamsEnvironment(t *testing.T) {
 	}
 }
 
-func TestDeliveryReadyRequiresConfiguredEnabledChannel(t *testing.T) {
-	cfg := Default()
-	if cfg.DeliveryReady() {
-		t.Error("未配置渠道时不应可投递")
-	}
-	cfg.Bark.URL = "https://api.day.app/key"
-	if !cfg.DeliveryReady() {
-		t.Error("已配置 Bark 时应可投递")
-	}
-	cfg.Channels["bark"] = false
-	if cfg.DeliveryReady() {
-		t.Error("Bark 已禁用时不应可投递")
-	}
-	cfg.Slack.WebhookURL = "https://hooks.slack.test/webhook"
-	if !cfg.DeliveryReady() {
-		t.Error("已配置 Slack 时应可投递")
-	}
-	cfg.Channels[ChannelSlack] = false
-	cfg.Teams.WebhookURL = "https://teams.test/webhook"
-	if !cfg.DeliveryReady() {
-		t.Error("已配置 Teams 时应可投递")
-	}
-}
-
 func TestLoadAppliesTitleDefaultsToLegacyConfig(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv(EnvConfigDir, dir)

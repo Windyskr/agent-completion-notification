@@ -17,6 +17,7 @@ import (
 	"github.com/windyskr/agent-completion-notification/internal/config"
 	"github.com/windyskr/agent-completion-notification/internal/event"
 	"github.com/windyskr/agent-completion-notification/internal/install"
+	"github.com/windyskr/agent-completion-notification/internal/notify"
 )
 
 // version 由构建时通过 -ldflags "-X main.version=..." 注入。
@@ -165,16 +166,11 @@ func cmdInstall(targets []string) error {
 
 	cfg, _ := config.Load()
 	fmt.Println()
-	if !cfg.DeliveryReady() {
+	if !notify.DeliveryReady(cfg) {
 		fmt.Println("下一步：配置至少一个通知渠道")
-		fmt.Println("  飞书：acn config feishu-url <机器人地址>")
-		fmt.Println("  Bark：acn config bark-url https://api.day.app/<key>")
-		fmt.Println("  钉钉：acn config dingtalk-url <机器人地址>")
-		fmt.Println("  企微：acn config wecom-url <机器人地址>")
-		fmt.Println("  Telegram：acn config telegram-token <token> && acn config telegram-chat-id <id>")
-		fmt.Println("  Email：acn config email-smtp <host:port>（并配置账号、发件人和收件人）")
-		fmt.Println("  Slack：acn config slack-url <Incoming Webhook 地址>")
-		fmt.Println("  Teams：acn config teams-url <Incoming Webhook 地址>")
+		for _, channel := range notify.Channels {
+			fmt.Println("  " + channel.Setup)
+		}
 	}
 	fmt.Println("提示：AI CLI 需重启后生效；装好后可用 acn doctor 自检")
 	return nil
@@ -204,19 +200,12 @@ func cmdStatus() error {
 	printTarget(st.OpenCode)
 
 	fmt.Println("\n配置（" + config.Path() + "）：")
-	fmt.Println("  " + mark(cfg.ChannelEnabled(config.ChannelFeishu) && cfg.FeishuReady()) + " 飞书 webhook：" + describeWebhook(cfg))
-	fmt.Println("  " + mark(cfg.ChannelEnabled(config.ChannelBark) && cfg.BarkReady()) + " Bark endpoint：" + describeBark(cfg))
-	fmt.Println("  " + mark(cfg.ChannelEnabled(config.ChannelDingTalk) && cfg.DingTalkReady()) + " 钉钉 webhook：" + describeEndpoint(cfg.DingTalkReady(), cfg.DingTalk.WebhookURL))
-	fmt.Println("  " + mark(cfg.ChannelEnabled(config.ChannelWeCom) && cfg.WeComReady()) + " 企微 webhook：" + describeEndpoint(cfg.WeComReady(), cfg.WeCom.WebhookURL))
-	fmt.Println("  " + mark(cfg.ChannelEnabled(config.ChannelTelegram) && cfg.TelegramReady()) + " Telegram bot：" + describeTelegram(cfg))
-	fmt.Println("  " + mark(cfg.ChannelEnabled(config.ChannelEmail) && cfg.EmailReady()) + " Email SMTP：" + describeEmail(cfg))
-	fmt.Println("  " + mark(cfg.ChannelEnabled(config.ChannelSlack) && cfg.SlackReady()) + " Slack webhook：" + describeEndpoint(cfg.SlackReady(), cfg.Slack.WebhookURL))
-	fmt.Println("  " + mark(cfg.ChannelEnabled(config.ChannelTeams) && cfg.TeamsReady()) + " Teams webhook：" + describeEndpoint(cfg.TeamsReady(), cfg.Teams.WebhookURL))
-	fmt.Printf("  · 渠道开关：feishu=%s bark=%s dingtalk=%s wecom=%s telegram=%s email=%s slack=%s teams=%s\n",
-		onOff(cfg.ChannelEnabled(config.ChannelFeishu)), onOff(cfg.ChannelEnabled(config.ChannelBark)),
-		onOff(cfg.ChannelEnabled(config.ChannelDingTalk)), onOff(cfg.ChannelEnabled(config.ChannelWeCom)),
-		onOff(cfg.ChannelEnabled(config.ChannelTelegram)), onOff(cfg.ChannelEnabled(config.ChannelEmail)),
-		onOff(cfg.ChannelEnabled(config.ChannelSlack)), onOff(cfg.ChannelEnabled(config.ChannelTeams)))
+	switches := make([]string, 0, len(notify.Channels))
+	for _, channel := range notify.Channels {
+		fmt.Println("  " + mark(channel.Active(cfg)) + " " + channel.Label + "：" + channel.Describe(cfg))
+		switches = append(switches, channel.Name+"="+onOff(cfg.ChannelEnabled(channel.Name)))
+	}
+	fmt.Println("  · 渠道开关：" + strings.Join(switches, " "))
 	fmt.Printf("  · Bark 同会话更新：%s\n", onOff(cfg.Bark.UpdateBySession))
 	fmt.Printf("  · 标题字段：device-name=%s agent-name=%s project-name=%s\n",
 		onOff(cfg.ShowDeviceName), onOff(cfg.ShowAgentName), onOff(cfg.ShowProjectName))
@@ -227,12 +216,6 @@ func cmdStatus() error {
 	fmt.Printf("  · Bark 点击跳转：claude=%s codex=%s\n",
 		onOff(cfg.Bark.SourceURL(event.SourceClaude) != ""),
 		onOff(cfg.Bark.SourceURL(event.SourceCodex) != ""))
-	if cfg.Feishu.Secret != "" {
-		fmt.Println("  · 飞书签名校验：已启用")
-	}
-	if cfg.DingTalk.Secret != "" {
-		fmt.Println("  · 钉钉签名校验：已启用")
-	}
 	if cfg.MinDurationSeconds > 0 {
 		fmt.Printf("  · 耗时阈值：%ds\n", cfg.MinDurationSeconds)
 	}
@@ -563,49 +546,6 @@ func printTarget(t install.TargetStatus) {
 	if t.Warning != "" {
 		fmt.Printf("    ⚠ %s\n", t.Warning)
 	}
-}
-
-func describeWebhook(cfg config.Config) string {
-	if !cfg.FeishuReady() {
-		return "未配置"
-	}
-	return strings.TrimSpace(cfg.Feishu.WebhookURL)
-}
-
-func describeBark(cfg config.Config) string {
-	if !cfg.BarkReady() {
-		return "未配置"
-	}
-	return strings.TrimSpace(cfg.Bark.URL)
-}
-
-func describeEndpoint(ready bool, endpoint string) string {
-	if !ready {
-		return "未配置"
-	}
-	return strings.TrimSpace(endpoint)
-}
-
-func describeTelegram(cfg config.Config) string {
-	if strings.TrimSpace(cfg.Telegram.BotToken) == "" {
-		return "未配置 token"
-	}
-	token := cfg.Telegram.BotToken
-	masked := "****"
-	if len(token) > 8 {
-		masked = token[:4] + "…" + token[len(token)-4:]
-	}
-	if strings.TrimSpace(cfg.Telegram.ChatID) == "" {
-		return masked + "（缺少 chat_id）"
-	}
-	return masked + " → " + cfg.Telegram.ChatID
-}
-
-func describeEmail(cfg config.Config) string {
-	if !cfg.EmailReady() {
-		return "未完整配置"
-	}
-	return cfg.Email.SMTPAddress + "（" + cfg.Email.From + " → " + cfg.Email.To + "）"
 }
 
 func parseSeconds(v string) (int, error) {

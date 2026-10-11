@@ -61,14 +61,9 @@ func cmdDoctor() error {
 		checkTarget(st.Codex),
 		checkTarget(st.OpenCode),
 		checkCodexTrust(st.Codex),
-		checkFeishu(cfg),
-		checkBark(cfg),
-		checkDingTalk(cfg),
-		checkWeCom(cfg),
-		checkTelegram(cfg),
-		checkEmail(cfg),
-		checkSlack(cfg),
-		checkTeams(cfg),
+	}
+	for _, channel := range notify.Channels {
+		checks = append(checks, checkChannel(cfg, channel))
 	}
 	checks = append(checks, checkDelivery(cfg))
 
@@ -207,98 +202,21 @@ func checkCodexTrust(t install.TargetStatus) check {
 	return check{"Codex 信任", levelOK, "已信任当前 ACN hook", ""}
 }
 
-func checkFeishu(cfg config.Config) check {
-	if !cfg.ChannelEnabled(config.ChannelFeishu) {
-		return check{"飞书 webhook", levelUnknown, "已禁用", ""}
+// checkChannel 核对单个渠道的开关与配置。渠道都是可选的，未配置不算失败。
+func checkChannel(cfg config.Config, channel notify.Channel) check {
+	switch {
+	case !cfg.ChannelEnabled(channel.Name):
+		return check{channel.Label, levelUnknown, "已禁用", ""}
+	case !channel.Ready(cfg):
+		return check{channel.Label, levelUnknown, channel.Describe(cfg) + "（可选）", ""}
 	}
-	if !cfg.FeishuReady() {
-		return check{"飞书 webhook", levelUnknown, "未配置（可选）", ""}
-	}
-	detail := strings.TrimSpace(cfg.Feishu.WebhookURL)
-	if cfg.Feishu.Secret != "" {
-		detail += "（已启用签名校验）"
-	}
-	return check{"飞书 webhook", levelOK, detail, ""}
-}
-
-func checkBark(cfg config.Config) check {
-	if !cfg.ChannelEnabled(config.ChannelBark) {
-		return check{"Bark endpoint", levelUnknown, "已禁用", ""}
-	}
-	if !cfg.BarkReady() {
-		return check{"Bark endpoint", levelUnknown, "未配置（可选）", ""}
-	}
-	return check{"Bark endpoint", levelOK, strings.TrimSpace(cfg.Bark.URL), ""}
-}
-
-func checkDingTalk(cfg config.Config) check {
-	if !cfg.ChannelEnabled(config.ChannelDingTalk) {
-		return check{"钉钉 webhook", levelUnknown, "已禁用", ""}
-	}
-	if !cfg.DingTalkReady() {
-		return check{"钉钉 webhook", levelUnknown, "未配置（可选）", ""}
-	}
-	detail := strings.TrimSpace(cfg.DingTalk.WebhookURL)
-	if cfg.DingTalk.Secret != "" {
-		detail += "（已启用签名校验）"
-	}
-	return check{"钉钉 webhook", levelOK, detail, ""}
-}
-
-func checkWeCom(cfg config.Config) check {
-	if !cfg.ChannelEnabled(config.ChannelWeCom) {
-		return check{"企微 webhook", levelUnknown, "已禁用", ""}
-	}
-	if !cfg.WeComReady() {
-		return check{"企微 webhook", levelUnknown, "未配置（可选）", ""}
-	}
-	return check{"企微 webhook", levelOK, strings.TrimSpace(cfg.WeCom.WebhookURL), ""}
-}
-
-func checkTelegram(cfg config.Config) check {
-	if !cfg.ChannelEnabled(config.ChannelTelegram) {
-		return check{"Telegram bot", levelUnknown, "已禁用", ""}
-	}
-	if !cfg.TelegramReady() {
-		return check{"Telegram bot", levelUnknown, describeTelegram(cfg) + "（可选）", ""}
-	}
-	return check{"Telegram bot", levelOK, describeTelegram(cfg), ""}
-}
-
-func checkEmail(cfg config.Config) check {
-	if !cfg.ChannelEnabled(config.ChannelEmail) {
-		return check{"Email SMTP", levelUnknown, "已禁用", ""}
-	}
-	if !cfg.EmailReady() {
-		return check{"Email SMTP", levelUnknown, "未完整配置（可选）", ""}
-	}
-	return check{"Email SMTP", levelOK, describeEmail(cfg), ""}
-}
-
-func checkSlack(cfg config.Config) check {
-	if !cfg.ChannelEnabled(config.ChannelSlack) {
-		return check{"Slack webhook", levelUnknown, "已禁用", ""}
-	}
-	if !cfg.SlackReady() {
-		return check{"Slack webhook", levelUnknown, "未配置（可选）", ""}
-	}
-	return check{"Slack webhook", levelOK, strings.TrimSpace(cfg.Slack.WebhookURL), ""}
-}
-
-func checkTeams(cfg config.Config) check {
-	if !cfg.ChannelEnabled(config.ChannelTeams) {
-		return check{"Teams webhook", levelUnknown, "已禁用", ""}
-	}
-	if !cfg.TeamsReady() {
-		return check{"Teams webhook", levelUnknown, "未配置（可选）", ""}
-	}
-	return check{"Teams webhook", levelOK, strings.TrimSpace(cfg.Teams.WebhookURL), ""}
+	return check{channel.Label, levelOK, channel.Describe(cfg), ""}
 }
 
 // checkDelivery 真的推一条，走与 hook 相同的渠道与文案；但跳过推送规则，
 // 否则 skip-untitled、来源开关等合法配置会让自检永远无法验证渠道。
 func checkDelivery(cfg config.Config) check {
-	if !cfg.DeliveryReady() {
+	if !notify.DeliveryReady(cfg) {
 		return check{
 			"实际推送", levelFail, "跳过（未配置已启用的通知渠道）",
 			"配置至少一个通知渠道",

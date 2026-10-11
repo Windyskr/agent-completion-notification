@@ -296,3 +296,28 @@ func TestCheckTargetTreatsSymlinkAsCurrentExecutable(t *testing.T) {
 		t.Errorf("同一二进制的 symlink 被误报: %+v", got)
 	}
 }
+
+// status 的渠道部分由注册表生成：每个渠道一行，签名校验并入对应行。
+func TestCmdStatusListsChannels(t *testing.T) {
+	hookEnv(t)
+	t.Setenv("HOME", t.TempDir())
+	cfg := config.Default()
+	cfg.Feishu = config.Feishu{WebhookURL: "https://open.feishu.cn/hook/key", Secret: "s"}
+	cfg.Channels[config.ChannelBark] = false
+	if err := config.Save(cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	out := captureStdout(t, cmdStatus)
+
+	for _, want := range []string{
+		"  ✓ 飞书 webhook：https://open.feishu.cn/hook/key（已启用签名校验）\n",
+		"  × Bark endpoint：未配置\n",
+		"  × Teams webhook：未配置\n",
+		"  · 渠道开关：feishu=on bark=off dingtalk=on wecom=on telegram=on email=on slack=on teams=on\n",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("status 输出缺少 %q:\n%s", want, out)
+		}
+	}
+}

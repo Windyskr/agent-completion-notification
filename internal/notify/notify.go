@@ -9,17 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/windyskr/agent-completion-notification/internal/bark"
 	"github.com/windyskr/agent-completion-notification/internal/config"
-	"github.com/windyskr/agent-completion-notification/internal/dingtalk"
-	"github.com/windyskr/agent-completion-notification/internal/email"
 	"github.com/windyskr/agent-completion-notification/internal/event"
-	"github.com/windyskr/agent-completion-notification/internal/feishu"
 	"github.com/windyskr/agent-completion-notification/internal/message"
-	"github.com/windyskr/agent-completion-notification/internal/slack"
-	"github.com/windyskr/agent-completion-notification/internal/teams"
-	"github.com/windyskr/agent-completion-notification/internal/telegram"
-	"github.com/windyskr/agent-completion-notification/internal/wecom"
 )
 
 // SendTimeout 是单次投递的整体超时。
@@ -153,33 +145,4 @@ func Deliver(ctx context.Context, cfg config.Config, ev event.Event) (Report, er
 	}
 	wg.Wait()
 	return report, errors.Join(errs...)
-}
-
-func configuredNotifiers(cfg config.Config) []Notifier {
-	var notifiers []Notifier
-	if cfg.ChannelEnabled(config.ChannelFeishu) && cfg.FeishuReady() {
-		notifiers = append(notifiers, feishu.New(cfg.Feishu))
-	}
-	if cfg.ChannelEnabled(config.ChannelBark) && cfg.BarkReady() {
-		notifiers = append(notifiers, bark.New(cfg.Bark))
-	}
-	if cfg.ChannelEnabled(config.ChannelDingTalk) && cfg.DingTalkReady() {
-		notifiers = append(notifiers, dingtalk.New(cfg.DingTalk))
-	}
-	if cfg.ChannelEnabled(config.ChannelWeCom) && cfg.WeComReady() {
-		notifiers = append(notifiers, wecom.New(cfg.WeCom))
-	}
-	if cfg.ChannelEnabled(config.ChannelTelegram) && cfg.TelegramReady() {
-		notifiers = append(notifiers, telegram.New(cfg.Telegram))
-	}
-	if cfg.ChannelEnabled(config.ChannelEmail) && cfg.EmailReady() {
-		notifiers = append(notifiers, email.New(cfg.Email))
-	}
-	if cfg.ChannelEnabled(config.ChannelSlack) && cfg.SlackReady() {
-		notifiers = append(notifiers, slack.New(cfg.Slack))
-	}
-	if cfg.ChannelEnabled(config.ChannelTeams) && cfg.TeamsReady() {
-		notifiers = append(notifiers, teams.New(cfg.Teams))
-	}
-	return notifiers
 }
