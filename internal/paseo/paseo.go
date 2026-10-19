@@ -127,15 +127,27 @@ func AgentName(agentID string) (string, error) {
 	if err := json.Unmarshal(out, &result); err != nil {
 		return "", fmt.Errorf("解析 Paseo 会话名称失败: %w", err)
 	}
-	return strings.TrimSpace(result.Name), nil
+	name := strings.TrimSpace(result.Name)
+	// paseo inspect 用连字符表示未设置名称。
+	if name == "-" {
+		return "", nil
+	}
+	return name, nil
 }
 
 // IsTitleGenerationMessage 判断是否为 Paseo 的临时标题生成 Agent 所输出的 JSON。
-// 该 Agent 没有可查询的 Paseo Agent 记录，且回复固定为仅包含 title 的对象。
+// 回复包含 title，以及可选的 branch；调用方还需确认缺少有效的会话名称。
 func IsTitleGenerationMessage(message string) bool {
 	var fields map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(strings.TrimSpace(message)), &fields); err != nil || len(fields) != 1 {
+	if err := json.Unmarshal([]byte(strings.TrimSpace(message)), &fields); err != nil || len(fields) < 1 || len(fields) > 2 {
 		return false
+	}
+	if len(fields) == 2 {
+		rawBranch, ok := fields["branch"]
+		var branch string
+		if !ok || json.Unmarshal(rawBranch, &branch) != nil || strings.TrimSpace(branch) == "" {
+			return false
+		}
 	}
 	rawTitle, ok := fields["title"]
 	if !ok {
