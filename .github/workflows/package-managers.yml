@@ -133,8 +133,29 @@ jobs:
             exit 1
           fi
 
-          gh run watch "${run_id}" --repo "${SCOOP_REPO}" \
-            --exit-status --interval 10
+          # GitHub API 偶发返回 502 时继续等待同一次运行，避免重复触发 Excavator。
+          for attempt in {1..3}; do
+            if gh run watch "${run_id}" --repo "${SCOOP_REPO}" \
+              --exit-status --interval 10; then
+              break
+            fi
+            conclusion="$(gh run view "${run_id}" --repo "${SCOOP_REPO}" \
+              --json conclusion --jq '.conclusion')" || conclusion=""
+            case "${conclusion}" in
+              success) break ;;
+              "") ;;
+              *)
+                echo "::error::Scoop Excavator finished with ${conclusion}"
+                exit 1
+                ;;
+            esac
+            if [[ "${attempt}" -eq 3 ]]; then
+              echo "::error::Could not determine Scoop Excavator result after three attempts"
+              exit 1
+            fi
+            echo "::warning::Could not query Scoop Excavator; retrying the same run"
+            sleep 10
+          done
 
           manifest="$(gh api \
             "repos/${SCOOP_REPO}/contents/bucket/acn.json" \
